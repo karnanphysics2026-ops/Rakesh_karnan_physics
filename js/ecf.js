@@ -2,6 +2,9 @@
 // Class 12 Physics · 200-question local pool · 20 questions/day
 // localStorage key: karnan_ecf_progress
 // Completely separate from the Electrostatics mode (electrostatics_practice key)
+// This overlaps in topic with js/electrostatics.js (which covers the same
+// chapter plus one more, via Supabase) but is a deliberately separate feature
+// — not legacy leftovers. Both are linked from the home screen; keep both.
 
 const ECF_STORE_KEY  = 'karnan_ecf_progress';
 const ECF_DAILY_LIMIT = 20;

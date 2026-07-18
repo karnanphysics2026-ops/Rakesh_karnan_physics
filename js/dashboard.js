@@ -108,15 +108,14 @@ async function renderDashboard() {
 
 async function loadWrongAnswers() {
   if (!authUser) { wrongAnswers = []; return; }
-  const lang_id = selection.language?.label === 'Tamil' ? 2 : 1;
   try {
+    // Flat schema — question_translations/options are always empty in this
+    // project, see js/db.js fetchQuestions Layer 2.
     const { data, error } = await db.from('wrong_answer_tracker')
       .select(`
         times_wrong, last_wrong_at, question_id,
         questions!inner(
-          id, subject, chapter_label, correct_option,
-          question_translations(question_text, explanation, lang_id),
-          options(option_key, option_text, lang_id)
+          id, subject, chapter_label, correct_option, question, options, explanation
         )
       `)
       .eq('user_id', authUser.id)
@@ -126,19 +125,14 @@ async function loadWrongAnswers() {
     if (error || !data) { wrongAnswers = []; return; }
     wrongAnswers = data.map(row => {
       const q = row.questions;
-      const trans = (q.question_translations || []).find(t => t.lang_id === lang_id)
-                 || (q.question_translations || [])[0] || {};
-      const filteredOpts = (q.options || []).filter(o => o.lang_id === lang_id);
-      const allOpts = filteredOpts.length ? filteredOpts : (q.options || []);
-      const optMap = {};
-      allOpts.forEach(o => { optMap[o.option_key] = o.option_text; });
+      const optMap = { A: q.options?.[0], B: q.options?.[1], C: q.options?.[2], D: q.options?.[3] };
       return {
         question_id: row.question_id,
         times_wrong: row.times_wrong,
         subject: q.subject || '',
         chapter: q.chapter_label || '',
-        question_text: trans.question_text || '',
-        explanation: trans.explanation || '',
+        question_text: q.question || '',
+        explanation: q.explanation || '',
         correct_option: q.correct_option,
         correct_text: optMap[q.correct_option] || '',
         optMap

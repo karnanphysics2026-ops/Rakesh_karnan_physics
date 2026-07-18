@@ -2,6 +2,10 @@
 // Physics 12th · Electric Charges & Electrostatic Potential chapters
 // Daily limit: 20 questions (capped at pool size if smaller), resets at LOCAL midnight
 // No-repeat: tracks seen question IDs across days; starts a new cycle when pool exhausted
+// Overlaps in topic with js/ecf.js + js/data-ecf.js (a separate, hardcoded
+// 200-question pool covering just "Electric Charges and Fields"). Deliberately
+// kept as two distinct features — this one is Supabase-backed, covers one more
+// chapter, and supports the admin-published daily locked quiz.
 
 const ES_STORE_KEY  = 'electrostatics_practice';
 const ES_SESSION_KEY = 'karnan_electrostatics_active_session';
@@ -241,30 +245,23 @@ async function _esFetchQuestionsByIds(ids) {
   });
   
   const allTags = [...new Set([...targetTags, ...tags])];
-  const isT = window.currentLang === 'ta';
-  const lang_id = isT ? 2 : 1;
 
-  // 3. Query questions and translations
+  // 3. Query questions (flat schema — question_translations/options are
+  // always empty in this project, see js/db.js fetchQuestions Layer 2)
   const { data, error } = await db
     .from('questions')
-    .select(`id, chapter_label, topic, correct_option, question_tag, status,
-             question_translations!inner(question_text, explanation),
-             options(option_key, option_text)`)
+    .select('id, chapter_label, topic, correct_option, question, options, explanation, question_tag, status')
     .in('question_tag', allTags)
-    .eq('status', 'active')
-    .eq('question_translations.lang_id', lang_id)
-    .eq('options.lang_id', lang_id);
-    
+    .eq('status', 'active');
+
   if (error) throw error;
   if (!data || !data.length) return [];
-  
+
   const mapped = data.map(r => {
-    const trans = Array.isArray(r.question_translations) ? r.question_translations[0] : r.question_translations;
-    const optMap = {};
-    (r.options || []).forEach(o => { optMap[o.option_key] = o.option_text; });
-    return buildQuestion({ id: r.id, question_text: trans?.question_text || '',
+    const optMap = { A: r.options?.[0], B: r.options?.[1], C: r.options?.[2], D: r.options?.[3] };
+    return buildQuestion({ id: r.id, question_text: r.question,
       optMap, correct_option: r.correct_option || 'A',
-      explanation: trans?.explanation, topic: r.topic || r.chapter_label,
+      explanation: r.explanation, topic: r.topic || r.chapter_label,
       chapter: r.chapter_label || '', tag: r.question_tag || '', subject: 'Physics' });
   });
   

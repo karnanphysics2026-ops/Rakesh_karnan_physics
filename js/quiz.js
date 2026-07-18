@@ -409,7 +409,7 @@ function renderPracticeQ() {
   if (appMode === 'electrostatics') {
     const esState = _esLoad();
     const served  = esState.servedToday || 0;
-    const limit   = Math.min(ES_DAILY_MAX, served); // best-effort display
+    const limit   = Math.min(_esDailyMax(), served); // best-effort display
     statusText += `  ⚡ ${idx + 1}/${total} ${_ta('today', 'இன்று')}`;
   } else if (!practiceState.skipDaily && userPlan === 'free') {
     const dailyLeft = Math.max(0, FREE_DAILY_LIMIT - getSubjectDailyTotal());

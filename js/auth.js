@@ -80,10 +80,7 @@ function selectPlan(plan) {
 async function confirmPlan() {
   const btn = document.getElementById('plan-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
-  await Promise.allSettled([
-    db.from('user_profiles').upsert({ id: authUser.id, plan: selectedPlan }, { onConflict: 'id' }),
-    db.from('profiles').update({ plan: selectedPlan }).eq('id', authUser.id)
-  ]);
+  await db.from('user_profiles').upsert({ id: authUser.id, plan: selectedPlan }, { onConflict: 'id' });
   userPlan = selectedPlan;
   DAILY_LIMIT = (userPlan === 'premium' || userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
   btn.disabled = false;
@@ -128,14 +125,8 @@ async function handleRegister() {
   btn.disabled = false; btn.textContent = 'Create Account';
   if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return; }
   authUser = data.user;
-  if (authUser) {
-    const profileRow = { id: authUser.id, display_name: name, plan: 'free', lang_id: 1, standard: '12th' };
-    // Insert into both tables (007 user_profiles + legacy profiles)
-    await Promise.allSettled([
-      db.from('user_profiles').upsert(profileRow, { onConflict: 'id' }),
-      db.from('profiles').upsert({ id: authUser.id, display_name: name, plan: 'free' }, { onConflict: 'id' })
-    ]);
-  }
+  // user_profiles row is created server-side by the on_auth_user_created_profile
+  // trigger (036_user_profiles_signup_trigger.sql) — no client-side insert needed.
   showPlanScreen();
 }
 
@@ -166,16 +157,12 @@ async function handleLogout() {
 
 async function loadUserPlan() {
   try {
-    // Try new user_profiles first, fall back to legacy profiles
-    let plan = 'free', displayName = '';
+    let plan = 'free';
     const { data: up } = await db.from('user_profiles').select('plan,display_name,lang_id,standard').eq('id', authUser.id).single();
     if (up) {
-      plan = up.plan || 'free'; displayName = up.display_name || '';
+      plan = up.plan || 'free';
       window.currentLang  = up.lang_id === 2 ? 'ta' : 'en';
       window.currentClass = up.standard || '12th';
-    } else {
-      const { data: p } = await db.from('profiles').select('plan,display_name').eq('id', authUser.id).single();
-      if (p) { plan = p.plan || 'free'; displayName = p.display_name || ''; }
     }
     userPlan = plan;
     DAILY_LIMIT = (userPlan === 'premium' || userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;

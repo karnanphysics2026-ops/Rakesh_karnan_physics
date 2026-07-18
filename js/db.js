@@ -96,34 +96,11 @@ async function fetchQuestions({ language, standard, subject, chapterId }) {
     } catch(e) { /* fall through */ }
   }
 
-  // ── Layer 2: Normalized DB — questions + question_translations + options ──
-  try {
-    let qb = db.from('questions')
-      .select(`id, chapter_label, topic, correct_option, question_tag, status,
-               question_translations!inner(question_text, explanation),
-               options(option_key, option_text)`)
-      .eq('language', language).eq('standard', standard).eq('subject', subject)
-      .eq('status', 'active')
-      .eq('question_translations.lang_id', lang_id)
-      .eq('options.lang_id', lang_id);
-    if (chapterId) qb = qb.eq('chapter_id', chapterId);
-    const { data, error } = await qb;
-    if (!error && data?.length) {
-      const mapped = data.map(r => {
-        const trans = Array.isArray(r.question_translations) ? r.question_translations[0] : r.question_translations;
-        const optMap = {};
-        (r.options || []).forEach(o => { optMap[o.option_key] = o.option_text; });
-        return buildQuestion({ id: r.id, question_text: trans?.question_text || '',
-          optMap, correct_option: r.correct_option || 'A',
-          explanation: trans?.explanation, topic: r.topic || r.chapter_label,
-          chapter: r.chapter_label || chapterId, tag: r.question_tag || '', subject });
-      });
-      // For Tamil: verify actual Tamil content before accepting
-      if (!isT || _hasTamilText(mapped[0]?.question)) return mapped;
-    }
-  } catch(e) { /* fall through to legacy */ }
-
-  // ── Layer 3: Legacy fallback (old flat schema) ────────────────────────────
+  // ── Layer 2: DB fallback (flat schema — questions.options JSONB) ──────────
+  // Previously tried question_translations/options first (normalized schema
+  // from migration 007), but those tables were never populated (0 rows in
+  // production) — that query always returned nothing and silently fell
+  // through here anyway. Removed to stop pretending it does something.
   let qb = db.from('questions')
     .select('id,topic,question,options,correct,correct_option,explanation,chapter_label,question_tag')
     .eq('language', language).eq('standard', standard).eq('subject', subject);
@@ -138,7 +115,7 @@ async function fetchQuestions({ language, standard, subject, chapterId }) {
       chapter: r.chapter_label || r.topic || chapterId || subject,
       tag: r.question_tag || '', subject });
   });
-  // For Tamil: if Layer 3 also returns English text, signal no Tamil content available
+  // For Tamil: if Layer 2 also returns English text, signal no Tamil content available
   if (isT && mapped3.length > 0 && !_hasTamilText(mapped3[0]?.question)) {
     throw new Error('tamil_unavailable');
   }
