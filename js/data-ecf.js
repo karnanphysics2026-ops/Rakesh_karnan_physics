@@ -1,6 +1,6 @@
 // Electric Charges and Fields — 200 MCQs (Class 12 Physics)
 // Auto-generated from Electric_Charges_Fields_200_MCQs.xlsx
-const ECF_QUESTIONS = [
+export const ECF_QUESTIONS = [
   {
     "id": "ecf_001",
     "question": "What does the term \"electrostatics\" refer to?",

@@ -1,41 +1,16 @@
-
-// ── CONFIG ──
+// ── CONFIG (constants) ──
 // Paste your Supabase project URL and anon key here (Dashboard → Project Settings → API)
-const SUPABASE_URL = 'https://vtswgisxeylubvazcefe.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_lTpVWMDF42ocz84PXirWww_iVcNyeZ-';
-let FREE_DAILY_LIMIT = 5;
-let FREE_FC_DAILY = 5;
-let FREE_TF_DAILY = 5;
-const PREMIUM_DAILY_LIMIT = 9999;
-const ADMIN_EMAIL = 'karnanphysics2026@gmail.com';
-let adminConfig = { free_daily_limit: 5, free_max_test_duration: 30, electrostatics_daily_limit: 20 };
-const LETTERS = ['1','2','3','4']; // display labels for options (never A/B/C/D to students)
+export const SUPABASE_URL = 'https://vtswgisxeylubvazcefe.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_lTpVWMDF42ocz84PXirWww_iVcNyeZ-';
+export const PREMIUM_DAILY_LIMIT = 9999;
+export const ADMIN_EMAIL = 'karnanphysics2026@gmail.com';
+export const LETTERS = ['1','2','3','4']; // display labels for options (never A/B/C/D to students)
 
 const { createClient } = window.supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// ── AUTH + PLAN STATE ──
-let authUser = null;
-let userPlan = 'free';
-let DAILY_LIMIT = FREE_DAILY_LIMIT;
-let selectedPlan = 'free';
-
-// ── APP STATE ──
-let manifest = null;
-let appMode = 'practice';
-let selection = { language: null, standard: null, subject: null, chapter: null };
-window.currentLang  = 'en';   // 'en' = English, 'ta' = Tamil
-window.currentClass = '12th'; // '11th' or '12th'
-let practiceState = { questions: [], idx: 0, answers: {}, skipDaily: false };
-let timedState = { questions: [], idx: 0, answers: {}, marked: {}, secs: 0, totalSecs: 11700, timer: null, start: 0, name: '' };
-let timedQCount = 180, timedDuration = 11700;
-let localLeaderboard = [], globalLeaderboard = [], currentLbTab = 'global';
-let mistakes = [], progress = { total: 0, correct: 0, wrong: 0, time: 0, subjects: {}, chapters: {}, history: [] };
-let wrongAnswers = [];
-let dailyCache = {};
+export const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── TAMIL CHAPTER NAME TRANSLATIONS ──────────────────────────────────────────
-const CHAPTER_LABELS_TA = {
+export const CHAPTER_LABELS_TA = {
   // Physics
   'Electric Charges and Fields':                        'மின்னூட்டங்கள் மற்றும் புலங்கள்',
   'Electrostatic Potential and Capacitance':            'மின்னிலை மற்றும் மின்தேக்கு',
@@ -79,9 +54,48 @@ const CHAPTER_LABELS_TA = {
   'Biodiversity and Conservation':                      'பல்லுயிர் மற்றும் பாதுகாப்பு',
 };
 
+// ── SHARED MUTABLE APP STATE ──────────────────────────────────────────────────
+// Everything here used to be a bare `let`/`const` on the implicit global scope
+// (js/config.js), read and reassigned directly from every other script. ES
+// modules can't do that (imported bindings can't be reassigned from outside
+// their module), so it's now a single object whose *properties* every module
+// reads/writes — e.g. `state.authUser = x` instead of `authUser = x`.
+export const state = {
+  FREE_DAILY_LIMIT: 5,
+  FREE_FC_DAILY: 5,
+  FREE_TF_DAILY: 5,
+  adminConfig: { free_daily_limit: 5, free_max_test_duration: 30, electrostatics_daily_limit: 20 },
+
+  // ── AUTH + PLAN STATE ──
+  authUser: null,
+  userPlan: 'free',
+  DAILY_LIMIT: 5, // mirrors FREE_DAILY_LIMIT initially
+  selectedPlan: 'free',
+
+  // ── APP STATE ──
+  manifest: null,
+  appMode: 'practice',
+  selection: { language: null, standard: null, subject: null, chapter: null },
+  currentLang: 'en',   // 'en' = English, 'ta' = Tamil
+  currentClass: '12th', // '11th' or '12th'
+  practiceState: { questions: [], idx: 0, answers: {}, skipDaily: false },
+  timedState: { questions: [], idx: 0, answers: {}, marked: {}, secs: 0, totalSecs: 11700, timer: null, start: 0, name: '' },
+  timedQCount: 180,
+  timedDuration: 11700,
+  localLeaderboard: [],
+  globalLeaderboard: [],
+  currentLbTab: 'global',
+  mistakes: [],
+  progress: { total: 0, correct: 0, wrong: 0, time: 0, subjects: {}, chapters: {}, history: [] },
+  wrongAnswers: [],
+  dailyCache: {},
+};
+
 // Returns the Tamil chapter name when Tamil UI is active, else the original label
-function _chapLabel(label) {
-  if (!_isTa()) return label;
+export function _chapLabel(label) {
+  // Lazy import to avoid a circular dependency (i18n.js has no deps of its own,
+  // so this is safe, but keeping the import local documents why it's here).
+  const isTa = localStorage.getItem('lang') === 'ta';
+  if (!isTa) return label;
   return CHAPTER_LABELS_TA[label] || label;
 }
-

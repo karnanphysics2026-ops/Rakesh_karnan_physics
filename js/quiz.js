@@ -1,12 +1,30 @@
+import { db, state, LETTERS, _chapLabel } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { showToast } from './ui.js';
+import { showScreen, showScreenPublic, selectionLabel, confirmSubmit } from './navigation.js';
+import {
+  subjClass, shuffle, qFingerprint, getSubjectDailyTotal, getDailyDone, setDailyDone,
+  getFCDoneToday, getTFDoneToday, incFCDone, incTFDone, isDailyComplete, getTimeUntilMidnight,
+  getWeekKey,
+} from './utils.js';
+import { fetchQuestions, fetchAllSubjectQuestions, saveStorage } from './db.js';
+import {
+  awardXP, recordChapterSession, checkAndShowAchievements,
+  checkAndUpdateElectrostaticsStreak, incrementDailyTarget,
+} from './gamification.js';
+import { _esLoad, _esDailyMax, openElectrostaticsMode } from './electrostatics.js';
+import { saveToLeaderboard } from './leaderboard.js';
+import { renderChapters, recordChapterAttempt } from './flow.js';
+
 let flashcardState = { questions: [], idx: 0, flipped: false };
 
-async function startFlashcards(chapter) {
-  selection.chapter = chapter;
+export async function startFlashcards(chapter) {
+  state.selection.chapter = chapter;
   document.getElementById('chapter-list').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><p>Loading flashcards…</p></div>';
   try {
     let qs = [];
-    const subjectName = selection.subject?.dbLabel || selection.subject?.label;
-    
+    const subjectName = state.selection.subject?.dbLabel || state.selection.subject?.label;
+
     // Fetch manual flashcards first
     try {
       const manual = await fetchManualFlashcards(subjectName, chapter.id);
@@ -25,20 +43,20 @@ async function startFlashcards(chapter) {
     } catch(e) {
       console.log('No manual flashcards or failed to load:', e);
     }
-    
+
     // Fallback to dynamic questions if no manual cards found
     if (qs.length === 0) {
-      qs = await fetchQuestions({ language: selection.language.label, standard: selection.standard.id, subject: subjectName, chapterId: chapter.id});
+      qs = await fetchQuestions({ language: state.selection.language.label, standard: state.selection.standard.id, subject: subjectName, chapterId: chapter.id});
     }
 
-    if (userPlan === 'free') {
-      const isFC = appMode !== 'truefalse';
+    if (state.userPlan === 'free') {
+      const isFC = state.appMode !== 'truefalse';
       const done = isFC ? getFCDoneToday() : getTFDoneToday();
-      const limit = isFC ? FREE_FC_DAILY : FREE_TF_DAILY;
+      const limit = isFC ? state.FREE_FC_DAILY : state.FREE_TF_DAILY;
       const remaining = limit - done;
       if (remaining <= 0) {
         showScreen('home');
-        showToast(isFC ? `You have used all ${FREE_FC_DAILY} flashcards for today. Come back tomorrow!` : `You have used all ${FREE_TF_DAILY} True/False questions for today. Come back tomorrow!`);
+        showToast(isFC ? `You have used all ${state.FREE_FC_DAILY} flashcards for today. Come back tomorrow!` : `You have used all ${state.FREE_TF_DAILY} True/False questions for today. Come back tomorrow!`);
         return;
       }
       qs = shuffle(qs).slice(0, remaining);
@@ -48,7 +66,7 @@ async function startFlashcards(chapter) {
     flashcardState = { questions: qs, idx: 0, flipped: false };
     renderFlashcard();
     showScreen('flashcard');
-    if (appMode === 'truefalse') {
+    if (state.appMode === 'truefalse') {
       switchFlashcardTab('truefalse');
     } else {
       switchFlashcardTab('flashcard');
@@ -77,8 +95,8 @@ function renderFlashcard() {
   document.getElementById('fc-total').textContent = total;
   document.getElementById('fc-progress').style.width = ((idx + 1) / total * 100) + '%';
   // "Subject · Chapter" breadcrumb
-  const subjectName = q.subject || selection.subject?.label || '';
-  const chapterName = _chapLabel(selection.chapter?.label || '');
+  const subjectName = q.subject || state.selection.subject?.label || '';
+  const chapterName = _chapLabel(state.selection.chapter?.label || '');
   const breadcrumb = [subjectName, chapterName].filter(Boolean).join(' · ');
   const bc = document.getElementById('fc-breadcrumb');
   const bcBack = document.getElementById('fc-breadcrumb-back');
@@ -117,7 +135,7 @@ function renderFlashcard() {
 
 let fcSaving = false;
 
-function flipCard() {
+export function flipCard() {
   flashcardState.flipped = !flashcardState.flipped;
   document.getElementById('fc-front').classList.toggle('hidden', flashcardState.flipped);
   document.getElementById('fc-back').classList.toggle('hidden', !flashcardState.flipped);
@@ -125,9 +143,9 @@ function flipCard() {
     flashcardState.counted = flashcardState.counted || new Set();
     flashcardState.counted.add(flashcardState.idx);
     incFCDone(1);
-    
+
     // Sync flashcard progress with debouncing
-    if (authUser && !fcSaving) {
+    if (state.authUser && !fcSaving) {
       const q = flashcardState.questions[flashcardState.idx];
       if (q) {
         fcSaving = true;
@@ -140,7 +158,7 @@ function flipCard() {
 }
 
 async function saveFlashcardProgress(q, rating = 4) {
-  if (!authUser || !q || !q.id) return;
+  if (!state.authUser || !q || !q.id) return;
   try {
     let flashcardId = null;
     if (q.isManual) {
@@ -177,7 +195,7 @@ async function saveFlashcardProgress(q, rating = 4) {
     const { data: current } = await db
       .from('user_flashcard_progress')
       .select('id, box_number, easiness_factor, repetitions, interval_days')
-      .eq('user_id', authUser.id)
+      .eq('user_id', state.authUser.id)
       .eq('flashcard_id', flashcardId)
       .maybeSingle();
 
@@ -209,7 +227,7 @@ async function saveFlashcardProgress(q, rating = 4) {
     nextReview.setDate(nextReview.getDate() + intervalDays);
 
     await db.from('user_flashcard_progress').upsert({
-      user_id: authUser.id,
+      user_id: state.authUser.id,
       flashcard_id: flashcardId,
       box_number: boxNumber,
       easiness_factor: parseFloat(easinessFactor.toFixed(2)),
@@ -224,22 +242,22 @@ async function saveFlashcardProgress(q, rating = 4) {
 }
 
 async function saveDailyQuizAttempt(quizId, questions, answers, timeTakenSecs) {
-  if (!authUser) return;
+  if (!state.authUser) return;
   try {
     const { count } = await db
       .from('daily_quiz_attempts')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', authUser.id)
+      .eq('user_id', state.authUser.id)
       .eq('daily_quiz_id', quizId);
-      
+
     const nextAttempt = (count || 0) + 1;
     const total = questions.length;
     const correctCount = Object.entries(answers).filter(([i, a]) => a === questions[i]?.correct).length;
     const wrongCount = total - correctCount;
     const score = correctCount * 4;
-    
+
     const attemptData = {
-      user_id: authUser.id,
+      user_id: state.authUser.id,
       daily_quiz_id: quizId,
       attempt_number: nextAttempt,
       score,
@@ -248,7 +266,7 @@ async function saveDailyQuizAttempt(quizId, questions, answers, timeTakenSecs) {
       time_taken: timeTakenSecs,
       completed_at: new Date().toISOString()
     };
-    
+
     const { error } = await db.from('daily_quiz_attempts').insert(attemptData);
     if (error) throw error;
   } catch(e) {
@@ -256,7 +274,7 @@ async function saveDailyQuizAttempt(quizId, questions, answers, timeTakenSecs) {
   }
 }
 
-function flashcardNav(dir) {
+export function flashcardNav(dir) {
   flashcardState.idx = Math.max(0, Math.min(flashcardState.questions.length - 1, flashcardState.idx + dir));
   renderFlashcard();
 }
@@ -276,7 +294,7 @@ function generateTFStatements(questions) {
     });
 }
 
-function switchFlashcardTab(tab) {
+export function switchFlashcardTab(tab) {
   document.getElementById('fc-tab-flashcard').classList.toggle('active', tab === 'flashcard');
   document.getElementById('fc-tab-truefalse').classList.toggle('active', tab === 'truefalse');
   const fcSection = document.getElementById('fc-flashcard-section');
@@ -319,7 +337,7 @@ function renderTF() {
   tfState.answered = false;
 }
 
-function answerTF(userSaysTrue) {
+export function answerTF(userSaysTrue) {
   if (tfState.answered) return;
   tfState.answered = true;
   incTFDone(1);
@@ -342,31 +360,31 @@ function answerTF(userSaysTrue) {
   }
 }
 
-function nextTF() {
+export function nextTF() {
   tfState.idx++;
   renderTF();
 }
 
-function showCommunity() {
+export function showCommunity() {
   showScreenPublic('community');
 }
 
-function updateResetTimer() {
+export function updateResetTimer() {
   const el = document.getElementById('time-until-reset');
   if (el) el.textContent = getTimeUntilMidnight();
 }
 
-function renderPracticeQ() {
-  const { questions, idx, answers } = practiceState;
+export function renderPracticeQ() {
+  const { questions, idx, answers } = state.practiceState;
   const q = questions[idx], total = questions.length;
   document.getElementById('pq-num').textContent = idx + 1;
   document.getElementById('pq-total').textContent = total;
   document.getElementById('pq-progress').style.width = ((idx + 1) / total * 100) + '%';
   const chapEl = document.getElementById('pq-chapter-name');
-  if (chapEl) chapEl.textContent = _chapLabel(selection.chapter?.label || q.chapter || '');
+  if (chapEl) chapEl.textContent = _chapLabel(state.selection.chapter?.label || q.chapter || '');
   const sc = document.getElementById('pq-subj-chip');
-  sc.textContent = q.subject || selection.subject?.label || '';
-  sc.className = 'subject-chip ' + subjClass(q.subject || selection.subject?.label);
+  sc.textContent = q.subject || state.selection.subject?.label || '';
+  sc.className = 'subject-chip ' + subjClass(q.subject || state.selection.subject?.label);
   document.getElementById('pq-question').textContent = q.question;
   const pqTag = document.getElementById('pq-tag');
   if (pqTag) pqTag.textContent = q.tag || '';
@@ -382,20 +400,20 @@ function renderPracticeQ() {
   }).join('');
   const expEl = document.getElementById('pq-explanation');
   document.getElementById('pq-exp-text').textContent = q.explanation || '';
-  if (answered !== undefined && appMode !== 'challenge') { expEl.classList.add('show'); expEl.classList.toggle('wrong-bg', answered !== q.correct); }
+  if (answered !== undefined && state.appMode !== 'challenge') { expEl.classList.add('show'); expEl.classList.toggle('wrong-bg', answered !== q.correct); }
   else expEl.classList.remove('show');
   document.getElementById('pq-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
   const nextBtn = document.getElementById('pq-next');
-  if (appMode === 'challenge' && idx === total - 1) {
+  if (state.appMode === 'challenge' && idx === total - 1) {
     nextBtn.textContent = 'See Results →';
   } else {
     nextBtn.textContent = idx === total - 1 ? 'Finish ✓' : 'Next →';
   }
   const banner = document.querySelector('#screen-practice-quiz .practice-mode-banner');
-  if (banner && appMode === 'challenge') {
+  if (banner && state.appMode === 'challenge') {
     banner.style.cssText = 'background:linear-gradient(90deg,#1e1b4b,#312e81);border-left-color:#6366f1;color:#c7d2fe';
     banner.querySelector('span').textContent = '🏆 Challenge Mode';
-  } else if (banner && appMode === 'electrostatics') {
+  } else if (banner && state.appMode === 'electrostatics') {
     banner.style.cssText = 'background:linear-gradient(90deg,#fef9c3,#fef08a);border-left-color:#f59e0b;color:#78350f';
     banner.querySelector('span').textContent = _ta('⚡ Electrostatics Practice', '⚡ மின்னியல் பயிற்சி');
   } else if (banner) {
@@ -404,145 +422,150 @@ function renderPracticeQ() {
   }
   const correct = Object.entries(answers).filter(([i, a]) => a === questions[i]?.correct).length;
   const wrong = Object.keys(answers).length - correct;
-  const ch = practiceState.chapter || selection.chapter;
+  const ch = state.practiceState.chapter || state.selection.chapter;
   let statusText = `✅ ${correct}  ❌ ${wrong}`;
-  if (appMode === 'electrostatics') {
+  if (state.appMode === 'electrostatics') {
     const esState = _esLoad();
     const served  = esState.servedToday || 0;
     const limit   = Math.min(_esDailyMax(), served); // best-effort display
     statusText += `  ⚡ ${idx + 1}/${total} ${_ta('today', 'இன்று')}`;
-  } else if (!practiceState.skipDaily && userPlan === 'free') {
-    const dailyLeft = Math.max(0, FREE_DAILY_LIMIT - getSubjectDailyTotal());
+  } else if (!state.practiceState.skipDaily && state.userPlan === 'free') {
+    const dailyLeft = Math.max(0, state.FREE_DAILY_LIMIT - getSubjectDailyTotal());
     statusText += `  📅 ${dailyLeft} left today`;
   }
   document.getElementById('pq-status').textContent = statusText;
 }
 
-function answerPractice(i) {
-  if (practiceState.answers[practiceState.idx] !== undefined) return;
-  const q = practiceState.questions[practiceState.idx];
-  practiceState.answers[practiceState.idx] = i;
-  const subj = q.subject || selection.subject?.label || 'General';
-  const chap = q.chapter || selection.chapter?.label || q.topic || 'General';
-  const chapId = selection.chapter?.id || '';
+export function answerPractice(i) {
+  if (state.practiceState.answers[state.practiceState.idx] !== undefined) return;
+  const q = state.practiceState.questions[state.practiceState.idx];
+  state.practiceState.answers[state.practiceState.idx] = i;
+  const subj = q.subject || state.selection.subject?.label || 'General';
+  const chap = q.chapter || state.selection.chapter?.label || q.topic || 'General';
+  const chapId = state.selection.chapter?.id || '';
   const isCorrect = i === q.correct;
   const isSkip = i === -1;
   const neetScore = isSkip ? 0 : isCorrect ? 4 : -1;
-  if (!progress.subjects[subj]) progress.subjects[subj] = { total: 0, correct: 0 };
-  if (!progress.chapters[chap]) progress.chapters[chap] = { total: 0, correct: 0 };
-  progress.total++;
-  progress.subjects[subj].total++;
-  progress.chapters[chap].total++;
+  if (!state.progress.subjects[subj]) state.progress.subjects[subj] = { total: 0, correct: 0 };
+  if (!state.progress.chapters[chap]) state.progress.chapters[chap] = { total: 0, correct: 0 };
+  state.progress.total++;
+  state.progress.subjects[subj].total++;
+  state.progress.chapters[chap].total++;
   if (isCorrect) {
-    progress.correct++;
-    progress.subjects[subj].correct++;
-    progress.chapters[chap].correct++;
+    state.progress.correct++;
+    state.progress.subjects[subj].correct++;
+    state.progress.chapters[chap].correct++;
     awardXP('correct_mcq', q.id || null).catch(() => {});
-  } else if (!isSkip) {    progress.wrong++;
-    mistakes.push({ question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: subj, chapter: chap, date: new Date().toLocaleDateString('en-GB'), yourAnswer: i });
-    if (mistakes.length > 200) mistakes.splice(0, mistakes.length - 200);
-    if (authUser) {
-      if (q.id) db.rpc('increment_wrong_count', { p_user_id: authUser.id, p_question_id: q.id }).then();
-      db.from('mistakes').insert({ user_id: authUser.id, question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: subj, chapter: chap, your_answer: i }).then();
+  } else if (!isSkip) {    state.progress.wrong++;
+    state.mistakes.push({ question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: subj, chapter: chap, date: new Date().toLocaleDateString('en-GB'), yourAnswer: i });
+    if (state.mistakes.length > 200) state.mistakes.splice(0, state.mistakes.length - 200);
+    if (state.authUser) {
+      if (q.id) db.rpc('increment_wrong_count', { p_user_id: state.authUser.id, p_question_id: q.id }).then();
+      db.from('mistakes').insert({ user_id: state.authUser.id, question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: subj, chapter: chap, your_answer: i }).then();
     }
   }
   // Write to topic_performance (new schema)
-  if (authUser && chapId) {
+  if (state.authUser && chapId) {
     db.from('topic_performance').upsert({
-      user_id: authUser.id, subject: subj,
-      chapter_id: chapId, standard: selection.standard?.id || '12th',
-      total: (progress.chapters[chap]?.total || 1),
-      correct: (progress.chapters[chap]?.correct || 0),
-      neet_score: (progress.chapters[chap]?.neet_score || 0) + neetScore,
+      user_id: state.authUser.id, subject: subj,
+      chapter_id: chapId, standard: state.selection.standard?.id || '12th',
+      total: (state.progress.chapters[chap]?.total || 1),
+      correct: (state.progress.chapters[chap]?.correct || 0),
+      neet_score: (state.progress.chapters[chap]?.neet_score || 0) + neetScore,
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id,subject,chapter_id,standard' }).then();
   }
   // Daily target + streak tracking (every answered MCQ counts)
   if (!isSkip) incrementDailyTarget(subj).catch(() => {});
-  if (!practiceState.skipDaily && selection.chapter) {
-    const dayData = getDailyDone(selection.chapter);
+  if (!state.practiceState.skipDaily && state.selection.chapter) {
+    const dayData = getDailyDone(state.selection.chapter);
     dayData.count = (dayData.count || 0) + 1;
     dayData.seen = dayData.seen || [];
     dayData.seen.push(qFingerprint(q));
-    setDailyDone(selection.chapter, dayData);
+    setDailyDone(state.selection.chapter, dayData);
   }
   saveStorage();
   // Save resume progress
-  if (appMode === 'electrostatics') {
-    const nextIdx = practiceState.idx + 1;
+  if (state.appMode === 'electrostatics') {
+    const nextIdx = state.practiceState.idx + 1;
     const esSession = {
-      questions: practiceState.questions,
+      questions: state.practiceState.questions,
       idx: nextIdx,
-      answers: practiceState.answers,
-      start: practiceState.start,
-      quizId: practiceState.quizId
+      answers: state.practiceState.answers,
+      start: state.practiceState.start,
+      quizId: state.practiceState.quizId
     };
     try { localStorage.setItem('karnan_electrostatics_active_session', JSON.stringify(esSession)); } catch(e) {}
-  } else if (practiceState.progressKey) {
-    const nextIdx = practiceState.idx + 1;
-    if (nextIdx < practiceState.questions.length) {
-      try { localStorage.setItem(practiceState.progressKey, String(nextIdx)); } catch(e) {}
+  } else if (state.practiceState.progressKey) {
+    const nextIdx = state.practiceState.idx + 1;
+    if (nextIdx < state.practiceState.questions.length) {
+      try { localStorage.setItem(state.practiceState.progressKey, String(nextIdx)); } catch(e) {}
     }
   }
   renderPracticeQ();
 }
 
-function practiceNav(dir) {
-  const total = practiceState.questions.length;
-  if (dir === 1 && practiceState.idx === total - 1) {
-    // Chapter complete — clear resume progress
-    if (practiceState.progressKey) { try { localStorage.removeItem(practiceState.progressKey); } catch(e) {} }
-    const timeTakenSecs = Math.round((Date.now() - (practiceState.start || Date.now())) / 1000);
-    if (appMode === 'electrostatics') {
-      try { localStorage.removeItem('karnan_electrostatics_active_session'); } catch(e) {}
-      if (authUser && practiceState.quizId) {
-        saveDailyQuizAttempt(practiceState.quizId, practiceState.questions, practiceState.answers, timeTakenSecs).catch(() => {});
-      }
-      checkAndUpdateElectrostaticsStreak().catch(() => {});
-    }
-    saveSessionToSupabase({ questions: practiceState.questions, answers: practiceState.answers, timeTakenSecs, mode: appMode || 'practice', chapterId: selection.chapter?.id });
-    // XP + mastery on chapter completion
-    if (authUser && total >= 5) {
-      const chapCorrect = Object.entries(practiceState.answers).filter(([i, a]) => a === practiceState.questions[i]?.correct).length;
-      awardXP('chapter_test', selection.chapter?.id || null).catch(() => {});
-      recordChapterSession(selection.chapter?.id, selection.subject?.dbLabel || selection.subject?.label, chapCorrect, total).catch(() => {});
-      checkAndShowAchievements().catch(() => {});
-      // Progression unlock — requires ≥20 questions to count as an attempt
-      if (total >= 20 && selection.chapter?.id && appMode === 'practice') {
-        const scorePct = Math.round(chapCorrect / total * 100);
-        const subj = selection.subject?.dbLabel || selection.subject?.label;
-        recordChapterAttempt(selection.chapter.id, subj, scorePct, total).catch(() => {});
-      }
-    }
-    if (appMode === 'electrostatics') {
-      openElectrostaticsMode();
-    } else if (!practiceState.skipDaily && userPlan !== 'premium' && userPlan !== 'unlimited' && selection.chapter && isDailyComplete(selection.chapter)) {
-      document.getElementById('done-chapter').textContent = _chapLabel(selection.chapter.label);
-      const limitEl = document.getElementById('done-limit');
-      if (limitEl) limitEl.textContent = `${FREE_DAILY_LIMIT} questions`;
-      const subLimitEl = document.getElementById('done-subject-limit');
-      if (subLimitEl) subLimitEl.textContent = `${FREE_DAILY_LIMIT} questions`;
-      updateResetTimer();
-      showScreen('daily-done');
-    } else showScreen('practice-chapter');
+export function practiceNav(dir) {
+  const total = state.practiceState.questions.length;
+  if (dir === 1 && state.practiceState.idx === total - 1) {
+    practiceNavFinish();
     return;
   }
-  practiceState.idx = Math.max(0, Math.min(total - 1, practiceState.idx + dir));
-  if (appMode === 'electrostatics') {
+  state.practiceState.idx = Math.max(0, Math.min(total - 1, state.practiceState.idx + dir));
+  if (state.appMode === 'electrostatics') {
     const esSession = {
-      questions: practiceState.questions,
-      idx: practiceState.idx,
-      answers: practiceState.answers,
-      start: practiceState.start,
-      quizId: practiceState.quizId
+      questions: state.practiceState.questions,
+      idx: state.practiceState.idx,
+      answers: state.practiceState.answers,
+      start: state.practiceState.start,
+      quizId: state.practiceState.quizId
     };
     try { localStorage.setItem('karnan_electrostatics_active_session', JSON.stringify(esSession)); } catch(e) {}
   }
   renderPracticeQ();
 }
 
-function renderTimedDurationOptions() {
-  const maxFree = adminConfig.free_max_test_duration;
+async function practiceNavFinish() {
+  const total = state.practiceState.questions.length;
+  // Chapter complete — clear resume progress
+  if (state.practiceState.progressKey) { try { localStorage.removeItem(state.practiceState.progressKey); } catch(e) {} }
+  const timeTakenSecs = Math.round((Date.now() - (state.practiceState.start || Date.now())) / 1000);
+  if (state.appMode === 'electrostatics') {
+    try { localStorage.removeItem('karnan_electrostatics_active_session'); } catch(e) {}
+    if (state.authUser && state.practiceState.quizId) {
+      saveDailyQuizAttempt(state.practiceState.quizId, state.practiceState.questions, state.practiceState.answers, timeTakenSecs).catch(() => {});
+    }
+    checkAndUpdateElectrostaticsStreak().catch(() => {});
+  }
+  saveSessionToSupabase({ questions: state.practiceState.questions, answers: state.practiceState.answers, timeTakenSecs, mode: state.appMode || 'practice', chapterId: state.selection.chapter?.id });
+  // XP + mastery on chapter completion
+  if (state.authUser && total >= 5) {
+    const chapCorrect = Object.entries(state.practiceState.answers).filter(([i, a]) => a === state.practiceState.questions[i]?.correct).length;
+    awardXP('chapter_test', state.selection.chapter?.id || null).catch(() => {});
+    recordChapterSession(state.selection.chapter?.id, state.selection.subject?.dbLabel || state.selection.subject?.label, chapCorrect, total).catch(() => {});
+    checkAndShowAchievements().catch(() => {});
+    // Progression unlock — requires ≥20 questions to count as an attempt
+    if (total >= 20 && state.selection.chapter?.id && state.appMode === 'practice') {
+      const scorePct = Math.round(chapCorrect / total * 100);
+      const subj = state.selection.subject?.dbLabel || state.selection.subject?.label;
+      recordChapterAttempt(state.selection.chapter.id, subj, scorePct, total).catch(() => {});
+    }
+  }
+  if (state.appMode === 'electrostatics') {
+    openElectrostaticsMode();
+  } else if (!state.practiceState.skipDaily && state.userPlan !== 'premium' && state.userPlan !== 'unlimited' && state.selection.chapter && isDailyComplete(state.selection.chapter)) {
+    document.getElementById('done-chapter').textContent = _chapLabel(state.selection.chapter.label);
+    const limitEl = document.getElementById('done-limit');
+    if (limitEl) limitEl.textContent = `${state.FREE_DAILY_LIMIT} questions`;
+    const subLimitEl = document.getElementById('done-subject-limit');
+    if (subLimitEl) subLimitEl.textContent = `${state.FREE_DAILY_LIMIT} questions`;
+    updateResetTimer();
+    showScreen('daily-done');
+  } else showScreen('practice-chapter');
+}
+
+export function renderTimedDurationOptions() {
+  const maxFree = state.adminConfig.free_max_test_duration;
   const options = [
     { mins: 15, label: '15 Minutes', sub: '15 Questions' },
     { mins: 30, label: '30 Minutes', sub: '30 Questions' },
@@ -553,13 +576,13 @@ function renderTimedDurationOptions() {
     { mins: 150, label: '2.5 Hours', sub: '150 Questions' },
     { mins: 180, label: '3 Hours', sub: '180 Questions' },
   ];
-  const isFree = userPlan === 'free';
+  const isFree = state.userPlan === 'free';
   // default select first allowed option
   const firstAllowed = options.find(o => !isFree || o.mins <= maxFree);
-  if (firstAllowed) { timedQCount = firstAllowed.mins; timedDuration = firstAllowed.mins * 60; }
+  if (firstAllowed) { state.timedQCount = firstAllowed.mins; state.timedDuration = firstAllowed.mins * 60; }
   document.getElementById('timed-duration-options').innerHTML = options.map(o => {
     const locked = isFree && o.mins > maxFree;
-    const isSelected = o.mins === timedQCount;
+    const isSelected = o.mins === state.timedQCount;
     return `<button class="sel-btn${isSelected ? ' active' : ''}${locked ? ' disabled' : ''}"
       style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem"
       ${locked ? `onclick="showUpgradePrompt('Timed Tests > ${o.label}')"` : `onclick="pickTimedDuration(${o.mins},this)"`}>
@@ -568,62 +591,62 @@ function renderTimedDurationOptions() {
     </button>`;
   }).join('');
 }
-function pickTimedDuration(mins, btn) {
-  timedQCount = mins;
-  timedDuration = mins * 60;
+export function pickTimedDuration(mins, btn) {
+  state.timedQCount = mins;
+  state.timedDuration = mins * 60;
   document.querySelectorAll('#timed-duration-options .sel-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 }
 
-async function startTimedTest() {
+export async function startTimedTest() {
   const name = document.getElementById('timed-name').value.trim();
   if (!name) { document.getElementById('timed-err').style.display = 'block'; return; }
   document.getElementById('timed-err').style.display = 'none';
   const btn = document.querySelector('#screen-timed-setup .btn-gold');
   btn.textContent = 'Loading questions…'; btn.disabled = true;
   try {
-    const subjects = selection.standard?.subjects || [];
+    const subjects = state.selection.standard?.subjects || [];
     let allQs = [];
     if (subjects.length > 1) {
       const results = await Promise.all(subjects.map(s =>
-        fetchAllSubjectQuestions(selection.language.label, selection.standard.id, s)
+        fetchAllSubjectQuestions(state.selection.language.label, state.selection.standard.id, s)
       ));
-      const perSubj = Math.floor(timedQCount / subjects.length);
+      const perSubj = Math.floor(state.timedQCount / subjects.length);
       results.forEach((subQs, i) => {
         allQs = allQs.concat(shuffle(subQs.map(q => ({ ...q, subject: subjects[i]?.label || q.subject }))).slice(0, perSubj));
       });
     } else {
-      allQs = await fetchAllSubjectQuestions(selection.language.label, selection.standard.id, selection.subject);
+      allQs = await fetchAllSubjectQuestions(state.selection.language.label, state.selection.standard.id, state.selection.subject);
     }
-    const qs = shuffle(allQs).slice(0, timedQCount);
-    timedState = { questions: qs, idx: 0, answers: {}, marked: {}, secs: timedDuration, totalSecs: timedDuration, timer: null, start: Date.now(), name };
+    const qs = shuffle(allQs).slice(0, state.timedQCount);
+    state.timedState = { questions: qs, idx: 0, answers: {}, marked: {}, secs: state.timedDuration, totalSecs: state.timedDuration, timer: null, start: Date.now(), name };
     document.getElementById('tq-total').textContent = qs.length;
     updateTimerDisplay();
     renderTimedQ();
     renderQNav();
     showScreen('timed-quiz');
-    timedState.timer = setInterval(timerTick, 1000);
+    state.timedState.timer = setInterval(timerTick, 1000);
   } catch (e) {
     alert('Failed to load questions for timed test.');
   }
   btn.textContent = '🚀 Start Timed Test'; btn.disabled = false;
 }
 
-function updateTimerDisplay() {
-  const h = Math.floor(timedState.secs / 3600), m = Math.floor((timedState.secs % 3600) / 60), s = timedState.secs % 60;
+export function updateTimerDisplay() {
+  const h = Math.floor(state.timedState.secs / 3600), m = Math.floor((state.timedState.secs % 3600) / 60), s = state.timedState.secs % 60;
   const el = document.getElementById('tq-timer');
   el.textContent = `⏱ ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  el.classList.toggle('urgent', timedState.secs <= 300);
+  el.classList.toggle('urgent', state.timedState.secs <= 300);
 }
 
-function renderTimedQ() {
-  const { questions, idx, answers, marked } = timedState;
+export function renderTimedQ() {
+  const { questions, idx, answers, marked } = state.timedState;
   const q = questions[idx];
   document.getElementById('tq-num').textContent = idx + 1;
   document.getElementById('tq-progress').style.width = ((idx + 1) / questions.length * 100) + '%';
   const sc = document.getElementById('tq-subj-chip');
-  sc.textContent = q.subject || selection.subject?.label || '';
-  sc.className = 'subject-chip ' + subjClass(q.subject || selection.subject?.label);
+  sc.textContent = q.subject || state.selection.subject?.label || '';
+  sc.className = 'subject-chip ' + subjClass(q.subject || state.selection.subject?.label);
   document.getElementById('tq-question').textContent = q.question;
   document.getElementById('tq-options').innerHTML = q.options.map((o, i) =>
     `<div class="opt${answers[idx] === i ? ' selected' : ''}" onclick="answerTimed(${i})"><div class="opt-key">${LETTERS[i]}</div>${o}</div>`
@@ -635,17 +658,17 @@ function renderTimedQ() {
   markBtn.textContent = marked[idx] ? '🟡 Marked' : '🟡 Mark for Review';
 }
 
-function answerTimed(i) { timedState.answers[timedState.idx] = i; renderTimedQ(); renderQNav(); }
-function toggleMark() { timedState.marked[timedState.idx] = !timedState.marked[timedState.idx]; renderTimedQ(); renderQNav(); }
-function timedNav(dir) {
-  if (dir === 1 && timedState.idx === timedState.questions.length - 1) { confirmSubmit(); return; }
-  timedState.idx = Math.max(0, Math.min(timedState.questions.length - 1, timedState.idx + dir));
+export function answerTimed(i) { state.timedState.answers[state.timedState.idx] = i; renderTimedQ(); renderQNav(); }
+export function toggleMark() { state.timedState.marked[state.timedState.idx] = !state.timedState.marked[state.timedState.idx]; renderTimedQ(); renderQNav(); }
+export function timedNav(dir) {
+  if (dir === 1 && state.timedState.idx === state.timedState.questions.length - 1) { confirmSubmit(); return; }
+  state.timedState.idx = Math.max(0, Math.min(state.timedState.questions.length - 1, state.timedState.idx + dir));
   renderTimedQ(); renderQNav();
 }
-function jumpToQ(i) { timedState.idx = i; renderTimedQ(); renderQNav(); }
+export function jumpToQ(i) { state.timedState.idx = i; renderTimedQ(); renderQNav(); }
 
-function renderQNav() {
-  const { questions, idx, answers, marked } = timedState;
+export function renderQNav() {
+  const { questions, idx, answers, marked } = state.timedState;
   const groups = {};
   questions.forEach((q, i) => {
     const s = q.chapter || q.topic || 'Questions';
@@ -668,16 +691,16 @@ function renderQNav() {
   document.getElementById('qnav-grid').innerHTML = html;
 }
 
-function timerTick() {
-  timedState.secs--;
+export function timerTick() {
+  state.timedState.secs--;
   updateTimerDisplay();
-  if (timedState.secs <= 0) { clearInterval(timedState.timer); finishTimedTest(); }
+  if (state.timedState.secs <= 0) { clearInterval(state.timedState.timer); finishTimedTest(); }
 }
 
 // ── Save session results to Supabase ─────────────────────────────────────────
 async function saveSessionToSupabase({ questions, answers, timeTakenSecs, mode, chapterId }) {
-  if (!authUser) return;
-  const lang_id = selection.language?.label === 'Tamil' ? 2 : 1;
+  if (!state.authUser) return;
+  const lang_id = state.selection.language?.label === 'Tamil' ? 2 : 1;
   let correct = 0, wrong = 0, skipped = 0;
   questions.forEach((q, i) => {
     if (answers[i] === undefined) skipped++;
@@ -689,12 +712,12 @@ async function saveSessionToSupabase({ questions, answers, timeTakenSecs, mode, 
   try {
     // 1. Insert exam_session
     const { data: sess, error: sessErr } = await db.from('exam_sessions').insert({
-      user_id:      authUser.id,
-      mode:         mode || appMode || 'practice',
-      language:     selection.language?.label || 'English',
-      standard:     selection.standard?.id    || '12th',
-      subject:      selection.subject?.label  || null,
-      chapter_id:   chapterId || selection.chapter?.id || null,
+      user_id:      state.authUser.id,
+      mode:         mode || state.appMode || 'practice',
+      language:     state.selection.language?.label || 'English',
+      standard:     state.selection.standard?.id    || '12th',
+      subject:      state.selection.subject?.label  || null,
+      chapter_id:   chapterId || state.selection.chapter?.id || null,
       total_q:      questions.length,
       correct_q:    correct,
       wrong_q:      wrong,
@@ -730,16 +753,16 @@ async function saveSessionToSupabase({ questions, answers, timeTakenSecs, mode, 
       .map(q => q.id);
     if (wrongIds.length) {
       await db.rpc('bulk_increment_wrong_count', {
-        p_user_id: authUser.id,
+        p_user_id: state.authUser.id,
         p_question_ids: wrongIds
       });
     }
   } catch(e) { /* silent — results screen still shows */ }
 }
 
-async function finishTimedTest() {
-  clearInterval(timedState.timer);
-  const { questions, answers, name, start } = timedState;
+export async function finishTimedTest() {
+  clearInterval(state.timedState.timer);
+  const { questions, answers, name, start } = state.timedState;
   const total = questions.length;
   let correct = 0, wrong = 0, skipped = 0;
   questions.forEach((q, i) => {
@@ -769,7 +792,7 @@ async function finishTimedTest() {
     if (answers[i] === q.correct) chapData[c].correct++;
   });
   const chapArr = Object.entries(chapData).map(([c, d]) => ({ c, p: Math.round(d.correct / d.total * 100) })).sort((a, b) => b.p - a.p);
-  const subj = selection.subject?.label || 'Physics';
+  const subj = state.selection.subject?.label || 'Physics';
   document.getElementById('tr-subject-analysis').innerHTML = `<div class="subj-row">
     <div class="subj-label">${subj}</div>
     <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
@@ -792,24 +815,24 @@ async function finishTimedTest() {
   questions.forEach((q, i) => {
     if (answers[i] !== undefined && answers[i] !== q.correct) {
       const entry = { question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: q.subject, chapter: q.chapter || q.topic, date: new Date().toLocaleDateString('en-GB'), yourAnswer: answers[i] };
-      mistakes.push(entry);
-      newMistakes.push({ user_id: authUser?.id, question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: q.subject, chapter: q.chapter || q.topic, your_answer: answers[i] });
+      state.mistakes.push(entry);
+      newMistakes.push({ user_id: state.authUser?.id, question: q.question, options: q.options, correct: q.correct, explanation: q.explanation || '', subject: q.subject, chapter: q.chapter || q.topic, your_answer: answers[i] });
     }
   });
-  if (mistakes.length > 200) mistakes.splice(0, mistakes.length - 200);
-  if (authUser && newMistakes.length) {
+  if (state.mistakes.length > 200) state.mistakes.splice(0, state.mistakes.length - 200);
+  if (state.authUser && newMistakes.length) {
     db.from('mistakes').insert(newMistakes.filter(m => m.user_id)).then();
   }
-  progress.total += total; progress.correct += correct; progress.wrong += wrong; progress.time += timeTaken;
-  progress.history = progress.history || [];
-  progress.history.push({ week: getWeekKey(), score: pct, correct, total, timeTaken, date: new Date().toLocaleDateString('en-GB') });
-  if (progress.history.length > 100) progress.history = progress.history.slice(-100);
-  if (progress.history.length > 20) progress.history.shift();
+  state.progress.total += total; state.progress.correct += correct; state.progress.wrong += wrong; state.progress.time += timeTaken;
+  state.progress.history = state.progress.history || [];
+  state.progress.history.push({ week: getWeekKey(), score: pct, correct, total, timeTaken, date: new Date().toLocaleDateString('en-GB') });
+  if (state.progress.history.length > 100) state.progress.history = state.progress.history.slice(-100);
+  if (state.progress.history.length > 20) state.progress.history.shift();
 
   const entry = { name, score: pct, correct, total, time: timeTaken, date: new Date().toLocaleDateString('en-GB'), week: getWeekKey(), selection: selectionLabel() };
-  localLeaderboard.push(entry);
-  localLeaderboard.sort((a, b) => b.score - a.score || a.time - b.time);
-  const rank = localLeaderboard.findIndex(e => e === entry) + 1;
+  state.localLeaderboard.push(entry);
+  state.localLeaderboard.sort((a, b) => b.score - a.score || a.time - b.time);
+  const rank = state.localLeaderboard.findIndex(e => e === entry) + 1;
   document.getElementById('tr-name').textContent += `  |  Rank #${rank}`;
   saveStorage();
 
@@ -819,8 +842,8 @@ async function finishTimedTest() {
   savingEl.innerHTML = saved
     ? '<span class="saving-badge" style="color:var(--success)">✅ Saved to global leaderboard!</span>'
     : '<span class="saving-badge">📱 Saved locally</span>';
-  saveSessionToSupabase({ questions, answers, timeTakenSecs: timeTaken, mode: appMode || 'timed' });
-  if (authUser) {
+  saveSessionToSupabase({ questions, answers, timeTakenSecs: timeTaken, mode: state.appMode || 'timed' });
+  if (state.authUser) {
     awardXP('mock_test').catch(() => {});
     checkAndShowAchievements().catch(() => {});
     refresh_leaderboard_score_remote().catch(() => {});
@@ -829,7 +852,22 @@ async function finishTimedTest() {
 }
 
 async function refresh_leaderboard_score_remote() {
-  if (!authUser) return;
-  await db.rpc('refresh_leaderboard_score', { p_user_id: authUser.id });
+  if (!state.authUser) return;
+  await db.rpc('refresh_leaderboard_score', { p_user_id: state.authUser.id });
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.flipCard = flipCard;
+window.flashcardNav = flashcardNav;
+window.switchFlashcardTab = switchFlashcardTab;
+window.answerTF = answerTF;
+window.nextTF = nextTF;
+window.showCommunity = showCommunity;
+window.answerPractice = answerPractice;
+window.practiceNav = practiceNav;
+window.pickTimedDuration = pickTimedDuration;
+window.startTimedTest = startTimedTest;
+window.answerTimed = answerTimed;
+window.toggleMark = toggleMark;
+window.timedNav = timedNav;
+window.jumpToQ = jumpToQ;

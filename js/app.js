@@ -1,4 +1,15 @@
-async function initApp() {
+import { state, ADMIN_EMAIL } from './state.js';
+import { _ta } from './i18n.js';
+import { showScreen } from './navigation.js';
+import { loadAdminConfig, loadSupabaseHomeStats } from './admin.js';
+import { loadGamificationState, loadDailyTarget, loadStreak, loadUserAchievements, renderLevelWidget } from './gamification.js';
+import { loadStorageSync, syncProgressFromSupabase, loadManifest } from './db.js';
+import { renderHomeFeatures, renderHomeStats, renderHomeSessions } from './home.js';
+import { renderLangOptions } from './flow.js';
+import { getTodayKey } from './utils.js';
+import { openElectrostaticsMode } from './electrostatics.js';
+
+export async function initApp() {
   document.getElementById('screen-auth-login').style.display = 'none';
   document.getElementById('screen-auth-register').style.display = 'none';
   document.getElementById('screen-plan').style.display = 'none';
@@ -35,54 +46,39 @@ async function initApp() {
   setTimeout(showDailyTipPopup, 800);
 }
 
-function updateNavUser() {
-  const name = authUser ? (authUser.user_metadata?.display_name || authUser.email?.split('@')[0] || 'User') : null;
+export function updateNavUser() {
+  const name = state.authUser ? (state.authUser.user_metadata?.display_name || state.authUser.email?.split('@')[0] || 'User') : null;
   // bottom nav
   const bnav = document.getElementById('bottom-nav');
-  if (bnav) bnav.style.display = authUser ? 'flex' : 'none';
+  if (bnav) bnav.style.display = state.authUser ? 'flex' : 'none';
   // nav user area — hide for guests, show level widget for logged-in users
   const navUser = document.getElementById('nav-user');
-  if (navUser) navUser.style.display = authUser ? 'flex' : 'none';
+  if (navUser) navUser.style.display = state.authUser ? 'flex' : 'none';
   renderLevelWidget();
   // greeting
   const greet = document.getElementById('greeting-name');
   if (greet) greet.textContent = name || 'there';
 }
 
-function renderProfileScreen() {
-  const name = authUser ? (authUser.user_metadata?.display_name || authUser.email?.split('@')[0] || 'User') : 'User';
-  const email = authUser?.email || '';
+export function renderProfileScreen() {
+  const name = state.authUser ? (state.authUser.user_metadata?.display_name || state.authUser.email?.split('@')[0] || 'User') : 'User';
+  const email = state.authUser?.email || '';
   const el = document.getElementById('profile-uname'); if (el) el.textContent = name;
   const em = document.getElementById('profile-email-txt'); if (em) em.textContent = email;
   const chip = document.getElementById('profile-plan-chip');
-  if (chip) { chip.textContent = userPlan === 'premium' ? '⭐ Premium' : (userPlan === 'unlimited' ? '🚀 Unlimited' : 'Free Plan'); chip.className = (userPlan === 'premium' || userPlan === 'unlimited') ? 'profile-plan-chip premium' : 'profile-plan-chip'; }
+  if (chip) { chip.textContent = state.userPlan === 'premium' ? '⭐ Premium' : (state.userPlan === 'unlimited' ? '🚀 Unlimited' : 'Free Plan'); chip.className = (state.userPlan === 'premium' || state.userPlan === 'unlimited') ? 'profile-plan-chip premium' : 'profile-plan-chip'; }
   const adminItem = document.getElementById('admin-menu-item');
-  if (adminItem) adminItem.style.display = authUser?.email === ADMIN_EMAIL ? 'flex' : 'none';
+  if (adminItem) adminItem.style.display = state.authUser?.email === ADMIN_EMAIL ? 'flex' : 'none';
 }
 
-function updateUpgradeBanner() {
+export function updateUpgradeBanner() {
   const el = document.getElementById('upgrade-banner');
   if (!el) return;
-  if (userPlan !== 'premium' && userPlan !== 'unlimited') {
+  if (state.userPlan !== 'premium' && state.userPlan !== 'unlimited') {
     el.innerHTML = `<div class="upgrade-banner"><p><b>⭐ Go Premium</b> — unlock flashcards, unlimited practice &amp; study community</p><button class="ub-btn" onclick="showUpgradePrompt('Premium Plan')">Upgrade</button></div>`;
   } else {
     el.innerHTML = '';
   }
-}
-
-function showUpgradePrompt(feature) {
-  document.getElementById('upgrade-feature').textContent = feature;
-  document.getElementById('upgrade-modal').classList.add('open');
-}
-
-function showToast(msg) {
-  let t = document.getElementById('app-toast');
-  if (!t) { t = document.createElement('div'); t.id = 'app-toast'; t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1035;color:#fff;padding:10px 20px;border-radius:24px;font-size:.85rem;font-family:Sora,sans-serif;z-index:9999;opacity:0;transition:opacity .3s'; document.body.appendChild(t); }
-  t.textContent = msg; t.style.opacity = '1';
-  setTimeout(() => { t.style.opacity = '0'; }, 3000);
-}
-function hideUpgradePrompt() {
-  document.getElementById('upgrade-modal').classList.remove('open');
 }
 
 const DAILY_TIPS = [
@@ -98,9 +94,9 @@ const DAILY_TIPS = [
   { type:'do',    label:'✅ DO THIS',     title:'Write Down SUVAT Variables', text:'For Physics numericals, write down known and unknown variables before solving. This systematic approach prevents errors.' },
 ];
 
-function showDailyTipPopup() {
+export function showDailyTipPopup() {
   const today = getTodayKey();
-  const shownKey = 'examace_tip_' + (authUser?.id || 'guest') + '_' + today;
+  const shownKey = 'examace_tip_' + (state.authUser?.id || 'guest') + '_' + today;
   if (localStorage.getItem(shownKey)) return;
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(),0,0)) / 86400000);
   const tip = DAILY_TIPS[dayOfYear % DAILY_TIPS.length];
@@ -113,7 +109,10 @@ function showDailyTipPopup() {
   document.getElementById('tip-modal').style.display = 'flex';
 }
 
-function closeTipModal() {
+export function closeTipModal() {
   document.getElementById('tip-modal').style.display = 'none';
-  try { localStorage.setItem('examace_tip_' + (authUser?.id||'guest') + '_' + getTodayKey(), '1'); } catch(e) {}
+  try { localStorage.setItem('examace_tip_' + (state.authUser?.id||'guest') + '_' + getTodayKey(), '1'); } catch(e) {}
 }
+
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.closeTipModal = closeTipModal;

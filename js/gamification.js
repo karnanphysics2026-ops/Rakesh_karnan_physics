@@ -1,6 +1,8 @@
-// ── GAMIFICATION ENGINE — Phase 2: XP + Level System ────────────────────────
+import { db, state } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { showToast } from './ui.js';
 
-// _isTa() and _ta() are defined globally in index.html
+// ── GAMIFICATION ENGINE — Phase 2: XP + Level System ────────────────────────
 
 const XP_REWARDS = {
   correct_mcq:   10,
@@ -44,12 +46,12 @@ function getLevelFromXP(xp) {
 }
 
 // ── Load state from Supabase ─────────────────────────────────────────────────
-async function loadGamificationState() {
-  if (!authUser) return;
+export async function loadGamificationState() {
+  if (!state.authUser) return;
   try {
     const { data } = await db.from('user_xp')
       .select('total_xp,today_xp,xp_date')
-      .eq('user_id', authUser.id)
+      .eq('user_id', state.authUser.id)
       .single();
     if (data) {
       const today = new Date().toISOString().split('T')[0];
@@ -62,13 +64,13 @@ async function loadGamificationState() {
 }
 
 // ── Award XP (fire-and-forget from quiz events) ──────────────────────────────
-async function awardXP(reason, refId = null) {
-  if (!authUser) return;
+export async function awardXP(reason, refId = null) {
+  if (!state.authUser) return;
   const amount = XP_REWARDS[reason] || 10;
   const oldLevel = getLevelFromXP(gamState.totalXP);
   try {
     const { data: newTotal, error } = await db.rpc('award_xp', {
-      p_user_id: authUser.id,
+      p_user_id: state.authUser.id,
       p_amount:  amount,
       p_reason:  reason,
       p_ref_id:  refId ? String(refId) : null,
@@ -117,16 +119,16 @@ function showLevelUpModal(level) {
   m.classList.add('show');
 }
 
-function closeLevelUpModal() {
+export function closeLevelUpModal() {
   const m = document.getElementById('levelup-modal');
   if (m) m.classList.remove('show');
 }
 
 // ── Nav level widget (replaces plain Free/Premium chip) ──────────────────────
-function renderLevelWidget() {
+export function renderLevelWidget() {
   const el = document.getElementById('nav-level-widget');
   if (!el) return;
-  if (!authUser) { el.style.display = 'none'; return; }
+  if (!state.authUser) { el.style.display = 'none'; return; }
   const { id, title, icon, totalXP, todayXP, progress } = gamState;
   el.style.display = 'flex';
   el.innerHTML = `
@@ -139,10 +141,10 @@ function renderLevelWidget() {
 }
 
 // ── Home XP card ─────────────────────────────────────────────────────────────
-function renderHomeXPCard() {
+export function renderHomeXPCard() {
   const el = document.getElementById('home-xp-card');
   if (!el) return;
-  if (!authUser) { el.style.display = 'none'; return; }
+  if (!state.authUser) { el.style.display = 'none'; return; }
   const { id, title, icon, totalXP, todayXP, nextXP, progress } = gamState;
   const xpToNext = nextXP === 999999 ? null : (nextXP - totalXP).toLocaleString();
   el.style.display = 'block';
@@ -164,11 +166,11 @@ function renderHomeXPCard() {
 }
 
 // ── Chapter mastery update (called after chapter session ends) ───────────────
-async function recordChapterSession(chapterId, subject, correct, total) {
-  if (!authUser || !chapterId || total === 0) return;
+export async function recordChapterSession(chapterId, subject, correct, total) {
+  if (!state.authUser || !chapterId || total === 0) return;
   try {
     await db.rpc('update_chapter_mastery', {
-      p_user_id:    authUser.id,
+      p_user_id:    state.authUser.id,
       p_chapter_id: String(chapterId),
       p_subject:    subject || 'General',
       p_correct:    correct,
@@ -178,10 +180,10 @@ async function recordChapterSession(chapterId, subject, correct, total) {
 }
 
 // ── Achievement check (fire after significant events) ───────────────────────
-async function checkAndShowAchievements() {
-  if (!authUser) return;
+export async function checkAndShowAchievements() {
+  if (!state.authUser) return;
   try {
-    const { data } = await db.rpc('check_achievements', { p_user_id: authUser.id });
+    const { data } = await db.rpc('check_achievements', { p_user_id: state.authUser.id });
     if (data?.length) {
       data.forEach((ach, i) => {
         setTimeout(() => showAchievementToast(ach), i * 2200);
@@ -225,10 +227,10 @@ let streakData = { currentStreak: 0, longestStreak: 0, streakUpdatedToday: false
 let _dailySyncTimer = null;
 
 // ── Load today's target from Supabase ────────────────────────────────────────
-async function loadDailyTarget() {
-  if (!authUser) return;
+export async function loadDailyTarget() {
+  if (!state.authUser) return;
   try {
-    const { data, error } = await db.rpc('get_or_create_daily_target', { p_user_id: authUser.id });
+    const { data, error } = await db.rpc('get_or_create_daily_target', { p_user_id: state.authUser.id });
     if (!error && data) {
       dailyTarget = {
         targetMCQs:         data.target_mcqs,
@@ -249,12 +251,12 @@ async function loadDailyTarget() {
 }
 
 // ── Load streak from Supabase ────────────────────────────────────────────────
-async function loadStreak() {
-  if (!authUser) return;
+export async function loadStreak() {
+  if (!state.authUser) return;
   try {
     const { data } = await db.from('user_streaks')
       .select('current_streak,longest_streak,last_practice_date')
-      .eq('user_id', authUser.id).single();
+      .eq('user_id', state.authUser.id).single();
     if (data) {
       const today = new Date().toISOString().split('T')[0];
       streakData.currentStreak      = data.current_streak;
@@ -267,8 +269,8 @@ async function loadStreak() {
 }
 
 // ── Called after every MCQ answer ────────────────────────────────────────────
-async function incrementDailyTarget(subject) {
-  if (!authUser || !dailyTarget.loaded) return;
+export async function incrementDailyTarget(subject) {
+  if (!state.authUser || !dailyTarget.loaded) return;
 
   dailyTarget.completedMCQs++;
   const s = (subject || '').toLowerCase();
@@ -300,11 +302,11 @@ async function incrementDailyTarget(subject) {
 }
 
 async function _syncDailyTarget() {
-  if (!authUser) return;
+  if (!state.authUser) return;
   try {
     const today = new Date().toISOString().split('T')[0];
     await db.from('daily_targets').upsert({
-      user_id:             authUser.id,
+      user_id:             state.authUser.id,
       target_date:         today,
       target_mcqs:         dailyTarget.targetMCQs,
       completed_mcqs:      dailyTarget.completedMCQs,
@@ -323,9 +325,9 @@ async function _syncDailyTarget() {
 
 // ── Update streak (once ≥20 MCQs answered today) ─────────────────────────────
 async function checkAndUpdateStreak() {
-  if (!authUser || streakData.streakUpdatedToday) return;
+  if (!state.authUser || streakData.streakUpdatedToday) return;
   try {
-    const { data: newStreak } = await db.rpc('update_streak', { p_user_id: authUser.id });
+    const { data: newStreak } = await db.rpc('update_streak', { p_user_id: state.authUser.id });
     if (newStreak != null) {
       streakData.currentStreak      = newStreak;
       streakData.longestStreak      = Math.max(streakData.longestStreak, newStreak);
@@ -350,9 +352,9 @@ async function checkAndUpdateStreak() {
 }
 
 // ── Daily Mission Card UI ─────────────────────────────────────────────────────
-function renderDailyMissionCard() {
+export function renderDailyMissionCard() {
   const el = document.getElementById('home-daily-goal');
-  if (!el || !authUser) return;
+  if (!el || !state.authUser) return;
 
   if (!dailyTarget.loaded) {
     el.innerHTML = `<div class="dm-loading"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0"></div><span>${_ta('Loading mission…','பணி ஏற்றுகிறது…')}</span></div>`;
@@ -401,9 +403,9 @@ function renderDailyMissionCard() {
 }
 
 // ── Streak Widget UI ──────────────────────────────────────────────────────────
-function renderStreakWidget() {
+export function renderStreakWidget() {
   const el = document.getElementById('home-streak-card');
-  if (!el || !authUser) return;
+  if (!el || !state.authUser) return;
 
   const { currentStreak, longestStreak } = streakData;
   const nextMilestone = currentStreak < 7 ? 7 : Math.ceil((currentStreak + 1) / 7) * 7;
@@ -441,14 +443,14 @@ let allAchievementDefs = [];  // all definitions from DB
 let achievementTab    = 'all';
 
 // ── Load all definitions + user's unlocked achievements ──────────────────────
-async function loadUserAchievements() {
-  if (!authUser) return;
+export async function loadUserAchievements() {
+  if (!state.authUser) return;
   try {
     const [{ data: defs }, { data: unlocked }] = await Promise.all([
       db.from('achievement_definitions').select('*').order('category').order('criteria_value'),
       db.from('user_achievements')
         .select('achievement_id, unlocked_at')
-        .eq('user_id', authUser.id),
+        .eq('user_id', state.authUser.id),
     ]);
     allAchievementDefs = defs || [];
     const unlockedMap  = {};
@@ -463,16 +465,16 @@ async function loadUserAchievements() {
 
 // ── Compute progress toward a locked achievement ─────────────────────────────
 function _achievementProgress(def) {
-  const total   = progress.total   || 0;
-  const correct = progress.correct || 0;
+  const total   = state.progress.total   || 0;
+  const correct = state.progress.correct || 0;
   const acc     = total > 0 ? Math.round(correct / total * 100) : 0;
 
   const subjectStat = (subj) => {
     // Check both exact match and substrings (Botany/Zoology → Biology)
-    let s = progress.subjects?.[subj] || {};
+    let s = state.progress.subjects?.[subj] || {};
     if (!s.total) {
       // Try alternate names
-      const alt = Object.entries(progress.subjects || {}).find(([k]) =>
+      const alt = Object.entries(state.progress.subjects || {}).find(([k]) =>
         k.toLowerCase().includes(subj.toLowerCase())
       );
       if (alt) s = alt[1];
@@ -495,7 +497,7 @@ function _achievementProgress(def) {
 }
 
 // ── Render the full achievements screen ──────────────────────────────────────
-function renderAchievementsScreen() {
+export function renderAchievementsScreen() {
   const el = document.getElementById('ach-content');
   if (!el) return;
 
@@ -609,7 +611,7 @@ function _renderAchievementCards() {
   }).join('');
 }
 
-function filterAchievementTab(tab) {
+export function filterAchievementTab(tab) {
   achievementTab = tab;
   document.querySelectorAll('.ach-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === tab)
@@ -618,9 +620,9 @@ function filterAchievementTab(tab) {
 }
 
 // ── Home achievements widget ──────────────────────────────────────────────────
-function renderHomeAchievementsWidget() {
+export function renderHomeAchievementsWidget() {
   const el = document.getElementById('home-achievements-widget');
-  if (!el || !authUser) return;
+  if (!el || !state.authUser) return;
 
   const unlocked = userAchievements.filter(a => a.unlockedAt);
   const total    = userAchievements.length;
@@ -653,32 +655,36 @@ function renderHomeAchievementsWidget() {
     </div>`;
 }
 
-async function checkAndUpdateElectrostaticsStreak() {
-  let state = {};
-  try { state = JSON.parse(localStorage.getItem('electrostatics_practice') || '{}') || {}; } catch(e) {}
-  
+export async function checkAndUpdateElectrostaticsStreak() {
+  let esState = {};
+  try { esState = JSON.parse(localStorage.getItem('electrostatics_practice') || '{}') || {}; } catch(e) {}
+
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  
-  if (state.lastStreakDate === today) {
+
+  if (esState.lastStreakDate === today) {
     return;
   }
-  
+
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yestStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
-  
-  let currentStreak = state.electrostaticsStreak || 0;
-  if (state.lastStreakDate === yestStr) {
+
+  let currentStreak = esState.electrostaticsStreak || 0;
+  if (esState.lastStreakDate === yestStr) {
     currentStreak += 1;
   } else {
     currentStreak = 1;
   }
-  
-  state.electrostaticsStreak = currentStreak;
-  state.lastStreakDate = today;
-  try { localStorage.setItem('electrostatics_practice', JSON.stringify(state)); } catch(e) {}
-  
+
+  esState.electrostaticsStreak = currentStreak;
+  esState.lastStreakDate = today;
+  try { localStorage.setItem('electrostatics_practice', JSON.stringify(esState)); } catch(e) {}
+
   await awardXP('electrostatics_streak');
   showToast(`⚡ Electrostatics Day ${currentStreak} Completed! +150 XP`);
 }
+
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.closeLevelUpModal = closeLevelUpModal;
+window.filterAchievementTab = filterAchievementTab;

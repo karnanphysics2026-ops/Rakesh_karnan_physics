@@ -1,23 +1,28 @@
-async function loadAdminConfig() {
+import { db, state } from './state.js';
+import { _ta } from './i18n.js';
+import { showScreen } from './navigation.js';
+import { shuffle } from './utils.js';
+
+export async function loadAdminConfig() {
   try {
     const { data } = await db.from('admin_config').select('key,value');
     if (data) {
       data.forEach(r => {
-        if (r.key === 'free_daily_limit') adminConfig.free_daily_limit = parseInt(r.value) || 5;
-        if (r.key === 'electrostatics_daily_limit') adminConfig.electrostatics_daily_limit = parseInt(r.value) || 20;
-        if (r.key === 'free_max_test_duration') adminConfig.free_max_test_duration = parseInt(r.value) || 30;
+        if (r.key === 'free_daily_limit') state.adminConfig.free_daily_limit = parseInt(r.value) || 5;
+        if (r.key === 'electrostatics_daily_limit') state.adminConfig.electrostatics_daily_limit = parseInt(r.value) || 20;
+        if (r.key === 'free_max_test_duration') state.adminConfig.free_max_test_duration = parseInt(r.value) || 30;
       });
-      FREE_DAILY_LIMIT = adminConfig.free_daily_limit;
-      FREE_FC_DAILY = adminConfig.free_daily_limit;
-      FREE_TF_DAILY = adminConfig.free_daily_limit;
-      if (userPlan === 'free') DAILY_LIMIT = FREE_DAILY_LIMIT;
+      state.FREE_DAILY_LIMIT = state.adminConfig.free_daily_limit;
+      state.FREE_FC_DAILY = state.adminConfig.free_daily_limit;
+      state.FREE_TF_DAILY = state.adminConfig.free_daily_limit;
+      if (state.userPlan === 'free') state.DAILY_LIMIT = state.FREE_DAILY_LIMIT;
       const qlEl = document.getElementById('plan-free-qlimit');
-      if (qlEl) qlEl.textContent = `${FREE_DAILY_LIMIT} questions / subject / day`;
+      if (qlEl) qlEl.textContent = `${state.FREE_DAILY_LIMIT} questions / subject / day`;
     }
   } catch(e) {}
 }
 
-async function saveAdminConfig() {
+export async function saveAdminConfig() {
   const limit = parseInt(document.getElementById('admin-daily-limit').value) || 5;
   const esLimit = parseInt(document.getElementById('admin-es-limit').value) || 20;
   const maxDur = parseInt(document.getElementById('admin-max-duration').value) || 30;
@@ -28,15 +33,15 @@ async function saveAdminConfig() {
       { key: 'free_max_test_duration', value: String(maxDur) }
     ]);
     if (error) throw new Error(error.message);
-    adminConfig.free_daily_limit = limit;
-    adminConfig.electrostatics_daily_limit = esLimit;
-    adminConfig.free_max_test_duration = maxDur;
-    FREE_DAILY_LIMIT = limit;
-    FREE_FC_DAILY = limit;
-    FREE_TF_DAILY = limit;
-    if (userPlan === 'free') DAILY_LIMIT = FREE_DAILY_LIMIT;
+    state.adminConfig.free_daily_limit = limit;
+    state.adminConfig.electrostatics_daily_limit = esLimit;
+    state.adminConfig.free_max_test_duration = maxDur;
+    state.FREE_DAILY_LIMIT = limit;
+    state.FREE_FC_DAILY = limit;
+    state.FREE_TF_DAILY = limit;
+    if (state.userPlan === 'free') state.DAILY_LIMIT = state.FREE_DAILY_LIMIT;
     const qlEl = document.getElementById('plan-free-qlimit');
-    if (qlEl) qlEl.textContent = `${FREE_DAILY_LIMIT} questions / subject / day`;
+    if (qlEl) qlEl.textContent = `${state.FREE_DAILY_LIMIT} questions / subject / day`;
     const msg = document.getElementById('admin-save-msg');
     msg.style.display = 'block';
     setTimeout(() => msg.style.display = 'none', 3000);
@@ -48,14 +53,14 @@ function getChapterLimits() {
   try { return JSON.parse(localStorage.getItem('adminChapterLimits') || '{}'); } catch(e) { return {}; }
 }
 
-function getChapterLimitForSubject(uiSubjectId) {
+export function getChapterLimitForSubject(uiSubjectId) {
   if (!uiSubjectId) return 99;
   const limits = getChapterLimits();
   const key = uiSubjectId.toLowerCase();
   return limits[key]?.visibleUpTo ?? 99;
 }
 
-function saveChapterLimits() {
+export function saveChapterLimits() {
   const label = document.getElementById('admin-vis-label').value.trim();
   const limits = {
     physics:   { visibleUpTo: parseInt(document.getElementById('admin-vis-physics').value)   || 99, label },
@@ -68,11 +73,11 @@ function saveChapterLimits() {
   setTimeout(() => msg.style.display = 'none', 3000);
 }
 
-function showAdminPanel() {
-  document.getElementById('admin-daily-limit').value = adminConfig.free_daily_limit;
+export function showAdminPanel() {
+  document.getElementById('admin-daily-limit').value = state.adminConfig.free_daily_limit;
   const esLimitEl = document.getElementById('admin-es-limit');
-  if (esLimitEl) esLimitEl.value = adminConfig.electrostatics_daily_limit || 20;
-  document.getElementById('admin-max-duration').value = adminConfig.free_max_test_duration;
+  if (esLimitEl) esLimitEl.value = state.adminConfig.electrostatics_daily_limit || 20;
+  document.getElementById('admin-max-duration').value = state.adminConfig.free_max_test_duration;
   // Load chapter limits into selects
   const limits = getChapterLimits();
   ['physics','chemistry','biology'].forEach(k => {
@@ -88,7 +93,7 @@ function showAdminPanel() {
   loadAdminUsers();
 }
 
-async function loadAdminUsers() {
+export async function loadAdminUsers() {
   const el = document.getElementById('admin-users-list');
   if (!el) return;
   el.innerHTML = '<div style="color:var(--muted);font-size:.83rem">Loading…</div>';
@@ -132,7 +137,7 @@ async function loadAdminUsers() {
   }
 }
 
-async function toggleUserDisabled(userId, currentlyDisabled) {
+export async function toggleUserDisabled(userId, currentlyDisabled) {
   try {
     const { error } = await db.from('user_profiles').update({ disabled: !currentlyDisabled }).eq('id', userId);
     if (error) throw new Error(error.message);
@@ -142,8 +147,8 @@ async function toggleUserDisabled(userId, currentlyDisabled) {
   }
 }
 
-async function loadSupabaseHomeStats() {
-  if (!authUser) return;
+export async function loadSupabaseHomeStats() {
+  if (!state.authUser) return;
   try {
     const todayLocal = new Date(); todayLocal.setHours(0,0,0,0);
     const since60 = new Date(todayLocal); since60.setDate(since60.getDate() - 60);
@@ -151,11 +156,11 @@ async function loadSupabaseHomeStats() {
     const [sessRes, perfRes] = await Promise.all([
       db.from('exam_sessions')
         .select('total_q, completed_at')
-        .eq('user_id', authUser.id)
+        .eq('user_id', state.authUser.id)
         .gte('completed_at', since60.toISOString()),
       db.from('topic_performance')
         .select('total, correct')
-        .eq('user_id', authUser.id)
+        .eq('user_id', state.authUser.id)
     ]);
 
     const sessions = sessRes.data || [];
@@ -177,7 +182,7 @@ async function loadSupabaseHomeStats() {
     while (daySet.has(d.toLocaleDateString('en-CA'))) { streak++; d.setDate(d.getDate() - 1); }
 
     // daily goal card — only for premium/unlimited (free card uses localStorage flashcard/TF counts)
-    if (userPlan !== 'free') {
+    if (state.userPlan !== 'free') {
       const DAILY_GOAL = 20;
       const pct = Math.min(100, Math.round(todayCount / DAILY_GOAL * 100));
       const dgCount  = document.getElementById('dgc-count');
@@ -203,11 +208,11 @@ async function loadSupabaseHomeStats() {
   } catch(e) { /* silent — localStorage values remain */ }
 }
 
-async function publishDailyQuizFromPool() {
+export async function publishDailyQuizFromPool() {
   const dateStr = document.getElementById('admin-dq-date').value;
   const msgEl = document.getElementById('admin-dq-msg');
   if (!dateStr) { alert('Please select a date.'); return; }
-  
+
   // 1. Block past-date scheduling
   const selectedDate = new Date(dateStr);
   selectedDate.setHours(0,0,0,0);
@@ -217,7 +222,7 @@ async function publishDailyQuizFromPool() {
     alert('Cannot publish daily quiz for a past date.');
     return;
   }
-  
+
   // 2. Add confirm overwrite check
   try {
     const { data: existing } = await db
@@ -227,7 +232,7 @@ async function publishDailyQuizFromPool() {
       .eq('subject', 'Physics')
       .eq('standard', '12th')
       .maybeSingle();
-      
+
     if (existing) {
       const confirmOverwrite = confirm(`A daily quiz is already published for ${dateStr}. Overwrite?`);
       if (!confirmOverwrite) return;
@@ -239,7 +244,7 @@ async function publishDailyQuizFromPool() {
   msgEl.style.display = 'block';
   msgEl.style.color = 'var(--text)';
   msgEl.textContent = 'Publishing daily quiz...';
-  
+
   try {
     // 1. Fetch active questions from Chapter 1 & 2
     const { data: qs, error } = await db
@@ -249,15 +254,15 @@ async function publishDailyQuizFromPool() {
       .eq('standard', '12th')
       .eq('status', 'active')
       .in('chapter_id', ['chapter1', 'chapter2']);
-      
+
     if (error) throw error;
     if (!qs || qs.length < 20) {
       throw new Error(`Not enough active questions in pool (found ${qs?.length || 0}, need 20)`);
     }
-    
+
     // Shuffle and pick 20 random ones
     const picked = shuffle(qs).slice(0, 20);
-    
+
     // 2. Insert into daily_quizzes
     const { data: newQuiz, error: qErr } = await db
       .from('daily_quizzes')
@@ -270,13 +275,13 @@ async function publishDailyQuizFromPool() {
       }, { onConflict: 'publish_date,subject,standard' })
       .select('id')
       .single();
-      
+
     if (qErr) throw qErr;
     const quizId = newQuiz.id;
-    
+
     // 3. Clear existing mapping if overwrite
     await db.from('daily_quiz_questions').delete().eq('daily_quiz_id', quizId);
-    
+
     // 4. Insert into daily_quiz_questions
     const mappings = picked.map((q, idx) => ({
       daily_quiz_id: quizId,
@@ -284,10 +289,10 @@ async function publishDailyQuizFromPool() {
       sequence_num: idx + 1,
       points: 4
     }));
-    
+
     const { error: mErr } = await db.from('daily_quiz_questions').insert(mappings);
     if (mErr) throw mErr;
-    
+
     msgEl.style.color = 'var(--success)';
     msgEl.textContent = `Successfully published 20 questions for ${dateStr}!`;
   } catch(e) {
@@ -296,3 +301,10 @@ async function publishDailyQuizFromPool() {
   }
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.showAdminPanel = showAdminPanel;
+window.saveAdminConfig = saveAdminConfig;
+window.saveChapterLimits = saveChapterLimits;
+window.loadAdminUsers = loadAdminUsers;
+window.toggleUserDisabled = toggleUserDisabled;
+window.publishDailyQuizFromPool = publishDailyQuizFromPool;

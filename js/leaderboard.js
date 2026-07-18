@@ -1,17 +1,20 @@
-async function saveToLeaderboard(entry) {
-  if (!authUser) return false;
+import { db, state } from './state.js';
+import { getWeekKey } from './utils.js';
+
+export async function saveToLeaderboard(entry) {
+  if (!state.authUser) return false;
   try {
     const { error } = await db.from('leaderboard').insert({
-      user_id: authUser.id, name: entry.name, score: entry.score,
+      user_id: state.authUser.id, name: entry.name, score: entry.score,
       correct: entry.correct, total: entry.total, time_taken: entry.time,
-      subject: selection.subject?.label || '', language: selection.language?.label || '',
-      standard: selection.standard?.id || '', week_key: entry.week,
+      subject: state.selection.subject?.label || '', language: state.selection.language?.label || '',
+      standard: state.selection.standard?.id || '', week_key: entry.week,
       selection_label: entry.selection
     });
     return !error;
   } catch (e) { return false; }
 }
-async function fetchGlobalLeaderboard() {
+export async function fetchGlobalLeaderboard() {
   try {
     const { data, error } = await db.from('leaderboard')
       .select('name,score,correct,total,time_taken,week_key,created_at')
@@ -24,21 +27,21 @@ async function fetchGlobalLeaderboard() {
   } catch (e) { return []; }
 }
 
-function switchLbTab(tab) {
-  currentLbTab = tab;
+export function switchLbTab(tab) {
+  state.currentLbTab = tab;
   ['global', 'local', 'history'].forEach(t => document.getElementById('lb-tab-' + t).classList.toggle('active', t === tab));
   renderLbContent();
 }
-async function loadLeaderboard() {
+export async function loadLeaderboard() {
   setWeekLabel();
   document.getElementById('lb-content').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><p>Loading…</p></div>';
-  globalLeaderboard = await fetchGlobalLeaderboard();
+  state.globalLeaderboard = await fetchGlobalLeaderboard();
   renderLbContent();
 }
 function renderLbContent() {
   const el = document.getElementById('lb-content');
-  if (currentLbTab === 'history') {
-    const h = progress.history || [];
+  if (state.currentLbTab === 'history') {
+    const h = state.progress.history || [];
     if (!h.length) { el.innerHTML = '<div class="empty-state"><div class="ei">📅</div><p>No test history yet.</p></div>'; return; }
     const max = Math.max(...h.map(e => e.score), 1);
     el.innerHTML = h.map((e, i) => {
@@ -51,13 +54,13 @@ function renderLbContent() {
     }).join('');
     return;
   }
-  const scores = currentLbTab === 'global' ? globalLeaderboard : localLeaderboard;
+  const scores = state.currentLbTab === 'global' ? state.globalLeaderboard : state.localLeaderboard;
   if (!scores.length) { el.innerHTML = '<div class="empty-state"><div class="ei">🏆</div><p>No scores yet. Complete the Weekly Timed Test!</p></div>'; return; }
   el.innerHTML = `<div style="overflow-x:auto"><table class="lb-table"><thead><tr><th>#</th><th>Name</th><th>Score</th><th>Correct</th><th>Time</th><th>Date</th></tr></thead><tbody>
     ${scores.slice(0, 10).map((e, i) => `<tr><td><span class="rank-badge ${i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : 'rn'}">${i + 1}</span></td>
     <td style="font-weight:500">${e.name}</td><td style="font-weight:700;color:var(--purple)">${e.score}%</td><td>${e.correct}/${e.total}</td>
     <td style="color:var(--muted);font-size:.8rem">${Math.floor(e.time / 60)}m ${e.time % 60}s</td><td style="color:var(--muted);font-size:.8rem">${e.date}</td></tr>`).join('')}
-  </tbody></table></div><p style="font-size:.73rem;color:var(--muted);margin-top:.75rem;text-align:center">${currentLbTab === 'global' ? '🌍 Global leaderboard' : '📱 This device only'}</p>`;
+  </tbody></table></div><p style="font-size:.73rem;color:var(--muted);margin-top:.75rem;text-align:center">${state.currentLbTab === 'global' ? '🌍 Global leaderboard' : '📱 This device only'}</p>`;
 }
 function setWeekLabel() {
   const now = new Date(), start = new Date(now); start.setDate(now.getDate() - now.getDay());
@@ -66,3 +69,5 @@ function setWeekLabel() {
   document.getElementById('lb-week').textContent = `Week of ${fmt(start)} – ${fmt(end)}`;
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.switchLbTab = switchLbTab;

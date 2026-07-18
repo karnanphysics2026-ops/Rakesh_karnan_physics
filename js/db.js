@@ -1,46 +1,49 @@
+import { db, state, SUPABASE_URL } from './state.js';
+import { shuffle } from './utils.js';
+
 // ── STORAGE ──
-function loadStorageSync() {
-  try { const s = localStorage.getItem('examace_lb'); if (s) localLeaderboard = JSON.parse(s); } catch (e) {}
-  try { const s = localStorage.getItem('examace_mistakes'); if (s) mistakes = JSON.parse(s); } catch (e) {}
-  try { const s = localStorage.getItem('examace_progress'); if (s) progress = JSON.parse(s); } catch (e) {}
+export function loadStorageSync() {
+  try { const s = localStorage.getItem('examace_lb'); if (s) state.localLeaderboard = JSON.parse(s); } catch (e) {}
+  try { const s = localStorage.getItem('examace_mistakes'); if (s) state.mistakes = JSON.parse(s); } catch (e) {}
+  try { const s = localStorage.getItem('examace_progress'); if (s) state.progress = JSON.parse(s); } catch (e) {}
 }
 
-async function syncProgressFromSupabase() {
-  if (!authUser) return;
+export async function syncProgressFromSupabase() {
+  if (!state.authUser) return;
   try {
-    const { data } = await db.from('user_progress').select('total,correct,wrong,time_spent,subjects,chapters,history').eq('user_id', authUser.id).single();
+    const { data } = await db.from('user_progress').select('total,correct,wrong,time_spent,subjects,chapters,history').eq('user_id', state.authUser.id).single();
     if (data) {
-      progress = { total: data.total, correct: data.correct, wrong: data.wrong, time: data.time_spent, subjects: data.subjects || {}, chapters: data.chapters || {}, history: data.history || [] };
-      try { localStorage.setItem('examace_progress', JSON.stringify(progress)); } catch (e) {}
+      state.progress = { total: data.total, correct: data.correct, wrong: data.wrong, time: data.time_spent, subjects: data.subjects || {}, chapters: data.chapters || {}, history: data.history || [] };
+      try { localStorage.setItem('examace_progress', JSON.stringify(state.progress)); } catch (e) {}
     }
-    const mistakeLimit = (userPlan === 'premium' || userPlan === 'unlimited') ? 200 : 20;
-    const { data: md } = await db.from('mistakes').select('question,options,correct,explanation,subject,chapter,your_answer,answered_at').eq('user_id', authUser.id).order('answered_at', { ascending: false }).limit(mistakeLimit);
+    const mistakeLimit = (state.userPlan === 'premium' || state.userPlan === 'unlimited') ? 200 : 20;
+    const { data: md } = await db.from('mistakes').select('question,options,correct,explanation,subject,chapter,your_answer,answered_at').eq('user_id', state.authUser.id).order('answered_at', { ascending: false }).limit(mistakeLimit);
     if (md) {
-      mistakes = md.map(m => ({ question: m.question, options: m.options, correct: m.correct, explanation: m.explanation, subject: m.subject, chapter: m.chapter, date: new Date(m.answered_at).toLocaleDateString('en-GB'), yourAnswer: m.your_answer }));
-      try { localStorage.setItem('examace_mistakes', JSON.stringify(mistakes)); } catch (e) {}
+      state.mistakes = md.map(m => ({ question: m.question, options: m.options, correct: m.correct, explanation: m.explanation, subject: m.subject, chapter: m.chapter, date: new Date(m.answered_at).toLocaleDateString('en-GB'), yourAnswer: m.your_answer }));
+      try { localStorage.setItem('examace_mistakes', JSON.stringify(state.mistakes)); } catch (e) {}
     }
   } catch (e) {}
 }
 
-function saveStorage() {
-  try { localStorage.setItem('examace_lb', JSON.stringify(localLeaderboard)); } catch (e) {}
-  try { localStorage.setItem('examace_mistakes', JSON.stringify(mistakes)); } catch (e) {}
-  try { localStorage.setItem('examace_progress', JSON.stringify(progress)); } catch (e) {}
-  if (!authUser) return;
+export function saveStorage() {
+  try { localStorage.setItem('examace_lb', JSON.stringify(state.localLeaderboard)); } catch (e) {}
+  try { localStorage.setItem('examace_mistakes', JSON.stringify(state.mistakes)); } catch (e) {}
+  try { localStorage.setItem('examace_progress', JSON.stringify(state.progress)); } catch (e) {}
+  if (!state.authUser) return;
   db.from('user_progress').upsert({
-    user_id: authUser.id, total: progress.total, correct: progress.correct, wrong: progress.wrong,
-    time_spent: progress.time, subjects: progress.subjects, chapters: progress.chapters,
-    history: progress.history, updated_at: new Date().toISOString()
+    user_id: state.authUser.id, total: state.progress.total, correct: state.progress.correct, wrong: state.progress.wrong,
+    time_spent: state.progress.time, subjects: state.progress.subjects, chapters: state.progress.chapters,
+    history: state.progress.history, updated_at: new Date().toISOString()
   }, { onConflict: 'user_id' }).then();
 }
 
-async function loadManifest() {
-  if (manifest) return manifest;
+export async function loadManifest() {
+  if (state.manifest) return state.manifest;
   const { data, error } = await db.from('chapters')
     .select('language,standard,subject,chapter_id,chapter_label,question_count')
     .order('language').order('standard').order('subject').order('chapter_id');
   if (error || !data?.length) throw new Error(error ? error.message : 'chapters table empty');
-  manifest = { languages: [] };
+  const manifest = { languages: [] };
   const li = {}, si = {}, oi = {};
   for (const r of data) {
     if (!li[r.language]) { li[r.language] = { id: r.language.toLowerCase(), label: r.language, standards: [] }; manifest.languages.push(li[r.language]); }
@@ -51,12 +54,13 @@ async function loadManifest() {
     oi[ok].chapters.push({ id: r.chapter_id, label: r.chapter_label, count: r.question_count || 0 });
     oi[ok].totalQuestions += r.question_count || 0;
   }
+  state.manifest = manifest;
   return manifest;
 }
 
 // Build a question object with shuffled options (A/B/C/D → display 1/2/3/4)
 // correct_option stays as A/B/C/D internally; correct (int) = shuffled display index
-function buildQuestion({ id, question_text, optMap, correct_option, explanation, topic, chapter, tag, subject }) {
+export function buildQuestion({ id, question_text, optMap, correct_option, explanation, topic, chapter, tag, subject }) {
   const keys = shuffle(['A','B','C','D']);          // e.g. ['C','A','D','B']
   const options = keys.map(k => optMap[k] || '');  // display 1/2/3/4 texts
   const correct = keys.indexOf(correct_option);     // which display position is correct
@@ -64,9 +68,9 @@ function buildQuestion({ id, question_text, optMap, correct_option, explanation,
 }
 
 // Returns true if text contains Tamil Unicode characters (U+0B80–U+0BFF)
-function _hasTamilText(text) { return /[஀-௿]/.test(text || ''); }
+export function _hasTamilText(text) { return /[஀-௿]/.test(text || ''); }
 
-async function fetchQuestions({ language, standard, subject, chapterId }) {
+export async function fetchQuestions({ language, standard, subject, chapterId }) {
   const isT = language.toLowerCase() === 'tamil';
   const lang_id = isT ? 2 : 1;  // case-insensitive Tamil detection
 
@@ -125,7 +129,7 @@ async function fetchQuestions({ language, standard, subject, chapterId }) {
 // Fetch all questions for a subject — used by timed/grand tests.
 // Tries a bulk DB fetch first; if it returns English for a Tamil request,
 // falls back to chapter-by-chapter CDN fetches (Layer 1).
-async function fetchAllSubjectQuestions(language, standard, subjectObj) {
+export async function fetchAllSubjectQuestions(language, standard, subjectObj) {
   const isStr = typeof subjectObj === 'string';
   const subjectLabel = isStr ? subjectObj : (subjectObj.dbLabel || subjectObj.label);
   const chapters = isStr ? [] : (subjectObj.chapters || []);
@@ -148,4 +152,3 @@ async function fetchAllSubjectQuestions(language, standard, subjectObj) {
 
   return [];
 }
-

@@ -1,3 +1,12 @@
+import { state, LETTERS } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { db } from './state.js';
+import { ECF_QUESTIONS } from './data-ecf.js';
+import { showScreen } from './navigation.js';
+import { saveStorage } from './db.js';
+import { awardXP, incrementDailyTarget } from './gamification.js';
+import { getTimeUntilMidnight } from './utils.js';
+
 // ── ELECTRIC CHARGES AND FIELDS — DAILY PRACTICE MODE ────────────────────────
 // Class 12 Physics · 200-question local pool · 20 questions/day
 // localStorage key: karnan_ecf_progress
@@ -21,31 +30,31 @@ function _ecfLoad() {
   try { return JSON.parse(localStorage.getItem(ECF_STORE_KEY) || 'null') || {}; }
   catch(e) { return {}; }
 }
-function _ecfSave(state) {
-  try { localStorage.setItem(ECF_STORE_KEY, JSON.stringify(state)); } catch(e) {}
+function _ecfSave(ecfState) {
+  try { localStorage.setItem(ECF_STORE_KEY, JSON.stringify(ecfState)); } catch(e) {}
 }
 
 // Rotate through the pool 20 at a time using a cursor; resets when exhausted
-function _ecfPickTodaysSet(state) {
+function _ecfPickTodaysSet(ecfState) {
   const total = ECF_QUESTIONS.length;
-  let cursor = state.poolCursor || 0;
+  let cursor = ecfState.poolCursor || 0;
   // Rotate cursor; restart from 0 when exhausted
   if (cursor >= total) cursor = 0;
   // Build a stable shuffled order for this cycle (deterministic per cycleCount)
-  if (!state.shuffleOrder || state.shuffleOrder.length !== total) {
-    state.shuffleOrder = _ecfShuffle([...Array(total).keys()]);
-    state.cycleCount   = (state.cycleCount || 0) + 1;
+  if (!ecfState.shuffleOrder || ecfState.shuffleOrder.length !== total) {
+    ecfState.shuffleOrder = _ecfShuffle([...Array(total).keys()]);
+    ecfState.cycleCount   = (ecfState.cycleCount || 0) + 1;
     cursor             = 0;
   }
-  const indices   = state.shuffleOrder.slice(cursor, cursor + ECF_DAILY_LIMIT);
-  state.poolCursor = cursor + indices.length;
+  const indices   = ecfState.shuffleOrder.slice(cursor, cursor + ECF_DAILY_LIMIT);
+  ecfState.poolCursor = cursor + indices.length;
   // If we wrapped the pool mid-day, carry the remainder from the next cycle
   if (indices.length < ECF_DAILY_LIMIT) {
-    state.shuffleOrder = _ecfShuffle([...Array(total).keys()]);
-    state.cycleCount   = (state.cycleCount || 0) + 1;
-    const extra = state.shuffleOrder.slice(0, ECF_DAILY_LIMIT - indices.length);
+    ecfState.shuffleOrder = _ecfShuffle([...Array(total).keys()]);
+    ecfState.cycleCount   = (ecfState.cycleCount || 0) + 1;
+    const extra = ecfState.shuffleOrder.slice(0, ECF_DAILY_LIMIT - indices.length);
     indices.push(...extra);
-    state.poolCursor = extra.length;
+    ecfState.poolCursor = extra.length;
   }
   return indices.map(i => ECF_QUESTIONS[i]);
 }
@@ -59,20 +68,20 @@ function _ecfShuffle(arr) {
 }
 
 // Check date rollover; reset daily session while preserving pool rotation state
-function _ecfCheckRollover(state) {
+function _ecfCheckRollover(ecfState) {
   const today = _ecfLocalDate();
-  if (state.lastDate !== today) {
-    state.lastDate       = today;
-    state.todaysQuestions = null;  // force re-pick
-    state.answers         = {};
-    state.currentIdx      = 0;
-    state.completed       = false;
-    state.repeatMode      = false;
+  if (ecfState.lastDate !== today) {
+    ecfState.lastDate       = today;
+    ecfState.todaysQuestions = null;  // force re-pick
+    ecfState.answers         = {};
+    ecfState.currentIdx      = 0;
+    ecfState.completed       = false;
+    ecfState.repeatMode      = false;
   }
-  if (!state.cycleCount)   state.cycleCount   = 0;
-  if (!state.poolCursor)   state.poolCursor   = 0;
-  if (!state.answers)      state.answers      = {};
-  return state;
+  if (!ecfState.cycleCount)   ecfState.cycleCount   = 0;
+  if (!ecfState.poolCursor)   ecfState.poolCursor   = 0;
+  if (!ecfState.answers)      ecfState.answers      = {};
+  return ecfState;
 }
 
 // Shuffle options for a question and return display object
@@ -89,7 +98,7 @@ function _ecfBuildDisplayQ(q) {
 let _ecfState   = null;  // in-memory cache for current session
 let _ecfDispQs  = [];    // current session's display-ready questions
 
-async function openECFMode() {
+export async function openECFMode() {
   showScreen('ecf');
   _ecfState = _ecfLoad();
   _ecfState = _ecfCheckRollover(_ecfState);
@@ -175,7 +184,7 @@ function _ecfShowQuestion(idx) {
   _ecfSave(_ecfState);
 }
 
-function ecfAnswer(optIdx) {
+export function ecfAnswer(optIdx) {
   if (_ecfState.answers[_ecfState.currentIdx] !== undefined) return; // already answered
   _ecfState.answers[_ecfState.currentIdx] = optIdx;
 
@@ -184,24 +193,24 @@ function ecfAnswer(optIdx) {
   const isOk  = optIdx === q.displayCorrect;
   const subj  = 'Physics';
   const chap  = 'Electric Charges and Fields';
-  if (!progress.subjects[subj]) progress.subjects[subj] = { total:0, correct:0 };
-  if (!progress.chapters[chap]) progress.chapters[chap] = { total:0, correct:0 };
-  progress.total++;
-  progress.subjects[subj].total++;
-  progress.chapters[chap].total++;
+  if (!state.progress.subjects[subj]) state.progress.subjects[subj] = { total:0, correct:0 };
+  if (!state.progress.chapters[chap]) state.progress.chapters[chap] = { total:0, correct:0 };
+  state.progress.total++;
+  state.progress.subjects[subj].total++;
+  state.progress.chapters[chap].total++;
   if (isOk) {
-    progress.correct++;
-    progress.subjects[subj].correct++;
-    progress.chapters[chap].correct++;
+    state.progress.correct++;
+    state.progress.subjects[subj].correct++;
+    state.progress.chapters[chap].correct++;
     awardXP('correct_mcq', q.id || null).catch(()=>{});
   } else {
-    progress.wrong++;
-    mistakes.push({ question: q.question, options: q.displayOptions, correct: q.displayCorrect,
+    state.progress.wrong++;
+    state.mistakes.push({ question: q.question, options: q.displayOptions, correct: q.displayCorrect,
       explanation: q.explanation || '', subject: subj, chapter: chap,
       date: new Date().toLocaleDateString('en-GB'), yourAnswer: optIdx });
-    if (mistakes.length > 200) mistakes.splice(0, mistakes.length - 200);
-    if (authUser && q.id) {
-      db.rpc('increment_wrong_count', { p_user_id: authUser.id, p_question_id: q.id }).catch(()=>{});
+    if (state.mistakes.length > 200) state.mistakes.splice(0, state.mistakes.length - 200);
+    if (state.authUser && q.id) {
+      db.rpc('increment_wrong_count', { p_user_id: state.authUser.id, p_question_id: q.id }).catch(()=>{});
     }
   }
   saveStorage();
@@ -210,7 +219,7 @@ function ecfAnswer(optIdx) {
   _ecfShowQuestion(_ecfState.currentIdx);
 }
 
-function ecfNav(dir) {
+export function ecfNav(dir) {
   const total = _ecfDispQs.length;
   if (dir === 1 && _ecfState.currentIdx === total - 1) {
     _ecfState.completed = true;
@@ -248,7 +257,7 @@ function _ecfShowCompletionScreen() {
     _ta(`Resets in ${getTimeUntilMidnight()}`, `${getTimeUntilMidnight()} இல் புதுப்பிக்கப்படும்`);
 }
 
-function ecfRepeatToday() {
+export function ecfRepeatToday() {
   // Reset answers and index only — keep same 20 questions, don't affect pool rotation
   _ecfState.answers    = {};
   _ecfState.currentIdx = 0;
@@ -263,3 +272,9 @@ function ecfRepeatToday() {
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 function _ecfEl(id) { return document.getElementById(id); }
+
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.openECFMode = openECFMode;
+window.ecfAnswer = ecfAnswer;
+window.ecfNav = ecfNav;
+window.ecfRepeatToday = ecfRepeatToday;

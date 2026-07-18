@@ -1,13 +1,28 @@
+import { db, state, LETTERS, _chapLabel } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { showToast, showUpgradePrompt } from './ui.js';
+import { showScreen, renderStepper, selectionLabel } from './navigation.js';
+import { loadManifest, fetchQuestions, fetchAllSubjectQuestions } from './db.js';
+import {
+  preloadDailyData, getDailyDone, setDailyDone, getSubjectDailyTotal,
+  isDailyComplete, getTimeUntilMidnight, qFingerprint, shuffle,
+} from './utils.js';
+import { getChapterLimitForSubject } from './admin.js';
+import {
+  renderPracticeQ, updateResetTimer, renderTimedDurationOptions, startFlashcards,
+  updateTimerDisplay, renderTimedQ, renderQNav, timerTick,
+} from './quiz.js';
+
 // ── Chapter progression unlock state ─────────────────────────────────────────
 let _chapUnlockMap       = {};   // { chapter1: { attempt_no, best_score, is_cleared }, ... }
 let _chapUnlockSubj      = '';
 let _pendingUnlockResult = null; // toast to show after returning from quiz
 
 async function loadChapterUnlockStatus(subject) {
-  if (!authUser || _chapUnlockSubj === subject) return;
+  if (!state.authUser || _chapUnlockSubj === subject) return;
   try {
     const { data } = await db.rpc('get_chapter_unlock_status', {
-      p_user_id: authUser.id, p_subject: subject,
+      p_user_id: state.authUser.id, p_subject: subject,
     });
     _chapUnlockMap  = {};
     (data || []).forEach(r => { _chapUnlockMap[r.chapter_id] = r; });
@@ -18,7 +33,7 @@ async function loadChapterUnlockStatus(subject) {
 function invalidateUnlockCache() { _chapUnlockSubj = ''; }
 
 function getChapterProgression(chapterId) {
-  if (!authUser) return { locked: false };
+  if (!state.authUser) return { locked: false };
   const num = parseInt(chapterId.replace(/\D/g, ''));
   if (num <= 1) return { locked: false };
   const prevId = `chapter${num - 1}`;
@@ -34,11 +49,11 @@ function getChapterProgression(chapterId) {
   };
 }
 
-async function recordChapterAttempt(chapterId, subject, scorePct, totalQs) {
-  if (!authUser || !chapterId || !subject) return null;
+export async function recordChapterAttempt(chapterId, subject, scorePct, totalQs) {
+  if (!state.authUser || !chapterId || !subject) return null;
   try {
     const { data } = await db.rpc('record_chapter_attempt', {
-      p_user_id:    authUser.id,
+      p_user_id:    state.authUser.id,
       p_subject:    subject,
       p_chapter_id: chapterId,
       p_score_pct:  scorePct,
@@ -53,13 +68,13 @@ async function recordChapterAttempt(chapterId, subject, scorePct, totalQs) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function openFlow(mode) {
-  if (mode === 'grand' && userPlan === 'free') { showUpgradePrompt('Weekly Grand Test'); return; }
-  if (mode === 'practice' && userPlan === 'free') { showUpgradePrompt('MCQ Practice — Upgrade to Premium'); return; }
-  if (mode === 'challenge' && userPlan === 'free') { showUpgradePrompt('Challenge Mode'); return; }
-  appMode = mode;
-  if (appMode === 'practice' && (userPlan === 'premium' || userPlan === 'unlimited')) appMode = 'weakareas';
-  selection = { language: null, standard: null, subject: null, chapter: null };
+export async function openFlow(mode) {
+  if (mode === 'grand' && state.userPlan === 'free') { showUpgradePrompt('Weekly Grand Test'); return; }
+  if (mode === 'practice' && state.userPlan === 'free') { showUpgradePrompt('MCQ Practice — Upgrade to Premium'); return; }
+  if (mode === 'challenge' && state.userPlan === 'free') { showUpgradePrompt('Challenge Mode'); return; }
+  state.appMode = mode;
+  if (state.appMode === 'practice' && (state.userPlan === 'premium' || state.userPlan === 'unlimited')) state.appMode = 'weakareas';
+  state.selection = { language: null, standard: null, subject: null, chapter: null };
   renderStepper(0);
   // Show loading on lang screen while manifest loads
   showScreen('practice-lang');
@@ -70,17 +85,17 @@ async function openFlow(mode) {
   }
 
   // Auto-apply saved preferences: skip straight to subject if both lang + class are known
-  const prefLangId = window.currentLang === 'ta' ? 'tamil' : 'english';
-  const prefLang   = manifest.languages.find(l => l.id === prefLangId);
+  const prefLangId = state.currentLang === 'ta' ? 'tamil' : 'english';
+  const prefLang   = state.manifest.languages.find(l => l.id === prefLangId);
   if (prefLang) {
-    selection.language = prefLang;
-    const prefStd = prefLang.standards.find(s => s.id === window.currentClass);
+    state.selection.language = prefLang;
+    const prefStd = prefLang.standards.find(s => s.id === state.currentClass);
     if (prefStd) {
-      selection.standard = prefStd;
-      if (appMode === 'grand') {
-        const subjs = selection.standard?.subjects?.map(s => s.label).join(', ') || 'All Subjects';
+      state.selection.standard = prefStd;
+      if (state.appMode === 'grand') {
+        const subjs = state.selection.standard?.subjects?.map(s => s.label).join(', ') || 'All Subjects';
         document.getElementById('grand-selection-label').textContent =
-          `${selection.language.label} · ${selection.standard.label} · ${subjs} · 180 Q · 3h 15m`;
+          `${state.selection.language.label} · ${state.selection.standard.label} · ${subjs} · 180 Q · 3h 15m`;
         renderStepper(2);
         showScreen('grand-setup');
       } else {
@@ -100,15 +115,15 @@ async function openFlow(mode) {
   renderLangOptions();
 }
 
-function renderLangOptions() {
-  const langs = manifest?.languages || [];
+export function renderLangOptions() {
+  const langs = state.manifest?.languages || [];
   const icons = { English: '🌐', Tamil: '🇮🇳' };
   const el = document.getElementById('lang-options');
   if (!langs.length) {
     el.innerHTML = '<div class="info-box">Could not load question catalog. Check Supabase connection.</div>';
     return;
   }
-  const activeLangId = window.currentLang === 'ta' ? 'tamil' : 'english';
+  const activeLangId = state.currentLang === 'ta' ? 'tamil' : 'english';
   el.innerHTML = langs.map(l => `
     <button class="sel-btn${l.id === activeLangId ? ' active' : ''}" onclick="selectLang('${l.id}')">
       <span>${icons[l.label] || '📖'}</span>${l.label}
@@ -116,12 +131,12 @@ function renderLangOptions() {
     </button>`).join('');
 }
 
-function selectLang(langId) {
-  selection.language = manifest.languages.find(l => l.id === langId);
-  window.currentLang = langId === 'tamil' ? 'ta' : 'en';
-  if (authUser) {
+export function selectLang(langId) {
+  state.selection.language = state.manifest.languages.find(l => l.id === langId);
+  state.currentLang = langId === 'tamil' ? 'ta' : 'en';
+  if (state.authUser) {
     db.from('user_profiles')
-      .upsert({ id: authUser.id, lang_id: window.currentLang === 'ta' ? 2 : 1 }, { onConflict: 'id' })
+      .upsert({ id: state.authUser.id, lang_id: state.currentLang === 'ta' ? 2 : 1 }, { onConflict: 'id' })
       .then();
   }
   renderClassOptions();
@@ -130,12 +145,12 @@ function selectLang(langId) {
 }
 
 function renderClassOptions() {
-  const standards = selection.language?.standards || [];
+  const standards = state.selection.language?.standards || [];
   const all = [{ id: '11th', label: 'Class 11', icon: '📗' }, { id: '12th', label: 'Class 12', icon: '📘' }];
   document.getElementById('class-options').innerHTML = all.map(c => {
     const found = standards.find(s => s.id === c.id);
     const disabled = !found;
-    const isActive = !disabled && c.id === window.currentClass;
+    const isActive = !disabled && c.id === state.currentClass;
     return `<button class="sel-btn${disabled ? ' disabled' : ''}${isActive ? ' active' : ''}" ${disabled ? 'disabled' : `onclick="selectClass('${c.id}')"`}>
       <span>${c.icon}</span>${c.label}
       ${disabled ? '<span style="margin-left:auto;font-size:.72rem;color:var(--muted)">Coming soon</span>' : `<span style="margin-left:auto;font-size:.72rem;color:var(--muted)">${found.subjects.length} subject(s)</span>`}
@@ -143,17 +158,17 @@ function renderClassOptions() {
   }).join('');
 }
 
-function selectClass(stdId) {
-  selection.standard = selection.language.standards.find(s => s.id === stdId);
-  window.currentClass = stdId;
-  if (authUser) {
+export function selectClass(stdId) {
+  state.selection.standard = state.selection.language.standards.find(s => s.id === stdId);
+  state.currentClass = stdId;
+  if (state.authUser) {
     db.from('user_profiles')
-      .upsert({ id: authUser.id, standard: stdId }, { onConflict: 'id' })
+      .upsert({ id: state.authUser.id, standard: stdId }, { onConflict: 'id' })
       .then();
   }
-  if (appMode === 'grand') {
-    const subjs = selection.standard?.subjects?.map(s => s.label).join(', ') || 'All Subjects';
-    document.getElementById('grand-selection-label').textContent = `${selection.language.label} · ${selection.standard.label} · ${subjs} · 180 Q · 3h 15m`;
+  if (state.appMode === 'grand') {
+    const subjs = state.selection.standard?.subjects?.map(s => s.label).join(', ') || 'All Subjects';
+    document.getElementById('grand-selection-label').textContent = `${state.selection.language.label} · ${state.selection.standard.label} · ${subjs} · 180 Q · 3h 15m`;
     renderStepper(2);
     showScreen('grand-setup');
     return;
@@ -171,9 +186,9 @@ const ALL_NEET_SUBJECTS = [
 const SUBJ_LABELS_TA = { 'Physics':'இயற்பியல்', 'Chemistry':'வேதியியல்', 'Biology':'உயிரியல்' };
 function _subjLabel(label) { return _isTa() ? (SUBJ_LABELS_TA[label] || label) : label; }
 
-function renderSubjectOptions() {
-  const subs = selection.standard?.subjects || [];
-  const modeLabel = (appMode === 'truefalse') ? _ta('True / False','சரி / தவறு') : (appMode === 'flashcard') ? _ta('Flashcards','நினைவட்டைகள்') : _ta('Practice','பயிற்சி');
+export function renderSubjectOptions() {
+  const subs = state.selection.standard?.subjects || [];
+  const modeLabel = (state.appMode === 'truefalse') ? _ta('True / False','சரி / தவறு') : (state.appMode === 'flashcard') ? _ta('Flashcards','நினைவட்டைகள்') : _ta('Practice','பயிற்சி');
   const titleEl = document.getElementById('subject-screen-title');
   if (titleEl) titleEl.textContent = `${modeLabel} — ${_ta('Choose a Subject','பாடம் தேர்ந்தெடுக்கவும்')}`;
   document.getElementById('subject-options').innerHTML = ALL_NEET_SUBJECTS.map(s => {
@@ -192,14 +207,14 @@ function renderSubjectOptions() {
   }).join('');
 }
 
-function selectSubject(subjId) {
+export function selectSubject(subjId) {
   const def = ALL_NEET_SUBJECTS.find(s => s.id === subjId);
   const dbId = def?.dbId || subjId;
-  const found = selection.standard.subjects.find(s => s.id === dbId);
-  selection.subject = found ? { ...found, label: def ? def.label : found.label, dbLabel: found.label, uiId: subjId } : null;
-  if (!selection.subject) return;
-  if (appMode === 'timed') {
-    document.getElementById('timed-selection-label').textContent = selectionLabel() + ` · ${selection.subject.totalQuestions || 0} questions available`;
+  const found = state.selection.standard.subjects.find(s => s.id === dbId);
+  state.selection.subject = found ? { ...found, label: def ? def.label : found.label, dbLabel: found.label, uiId: subjId } : null;
+  if (!state.selection.subject) return;
+  if (state.appMode === 'timed') {
+    document.getElementById('timed-selection-label').textContent = selectionLabel() + ` · ${state.selection.subject.totalQuestions || 0} questions available`;
     renderTimedDurationOptions();
     renderStepper(3);
     showScreen('timed-setup');
@@ -210,17 +225,17 @@ function selectSubject(subjId) {
   showScreen('practice-chapter');
 }
 
-async function renderChapters() {
-  const chaps = selection.subject?.chapters || [];
-  const subj = selection.subject.label;
-  const dbSubj = selection.subject?.dbLabel || subj;
-  const isPremium = userPlan === 'premium' || userPlan === 'unlimited';
-  const isWeakAreas = appMode === 'weakareas';
-  const useProgression = appMode === 'practice' && authUser;
+export async function renderChapters() {
+  const chaps = state.selection.subject?.chapters || [];
+  const subj = state.selection.subject.label;
+  const dbSubj = state.selection.subject?.dbLabel || subj;
+  const isPremium = state.userPlan === 'premium' || state.userPlan === 'unlimited';
+  const isWeakAreas = state.appMode === 'weakareas';
+  const useProgression = state.appMode === 'practice' && state.authUser;
   const subjDisplay = _subjLabel(subj);
   document.getElementById('chapter-title').textContent = isWeakAreas
     ? `${subjDisplay} — ${_ta('Weak Areas','பலவீன பகுதிகள்')}`
-    : appMode === 'challenge' ? `${subjDisplay} — ${_ta('Challenge','சவால்')}`
+    : state.appMode === 'challenge' ? `${subjDisplay} — ${_ta('Challenge','சவால்')}`
     : `${subjDisplay} — ${_ta('Select Chapter','அத்தியாயம் தேர்ந்தெடுக்கவும்')}`;
   document.getElementById('chapter-list').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><p>Loading chapters…</p></div>';
   await Promise.all([
@@ -231,7 +246,7 @@ async function renderChapters() {
   const bannerEl = document.getElementById('daily-progress-banner');
   if (isWeakAreas && bannerEl) {
     bannerEl.innerHTML = `<div style="background:linear-gradient(90deg,#fff0f0,#ffe4e4);border-left:4px solid #dc2626;border-radius:8px;padding:.6rem .9rem;margin-bottom:.75rem;font-size:.82rem;font-weight:700;color:#9b1c1c">🎯 ${_ta('Weak Areas Mode — Chapters sorted by lowest accuracy first','பலவீன பகுதி முறை — குறைந்த துல்லியம் முதலில் காட்டப்படும்')}</div>`;
-  } else if (appMode === 'challenge' && bannerEl) {
+  } else if (state.appMode === 'challenge' && bannerEl) {
     bannerEl.innerHTML = `<div style="background:linear-gradient(90deg,#1e1b4b,#312e81);border-radius:8px;padding:.6rem .9rem;margin-bottom:.75rem;font-size:.82rem;font-weight:700;color:#c7d2fe">🏆 ${_ta('Challenge Mode — Answers revealed only at the end. No hints!','சவால் முறை — விடைகள் இறுதியில் மட்டுமே காட்டப்படும். குறிப்புகள் இல்லை!')}</div>`;
   } else if (isPremium) {
     const DAILY_GOAL = 20;
@@ -243,7 +258,7 @@ async function renderChapters() {
       <div class="daily-limit-bar"><div class="daily-limit-fill" style="width:${pct}%"></div></div></div></div>`;
   } else {
     const subjectTotal = getSubjectDailyTotal();
-    const subjectLimit = FREE_DAILY_LIMIT;
+    const subjectLimit = state.FREE_DAILY_LIMIT;
     const pct = Math.min(100, Math.round(subjectTotal / subjectLimit * 100));
     if (bannerEl) bannerEl.innerHTML = `<div class="daily-banner">
       <div style="font-size:1.4rem">📅</div>
@@ -266,7 +281,7 @@ async function renderChapters() {
   const chapAccMap = {};
   if (isWeakAreas) {
     chaps.forEach(c => {
-      const stat = progress.chapters?.[c.label] || progress.chapters?.[c.id];
+      const stat = state.progress.chapters?.[c.label] || state.progress.chapters?.[c.id];
       chapAccMap[c.id] = stat?.total > 0 ? Math.round(stat.correct / stat.total * 100) : null;
     });
     sortedChaps.sort((a, b) => {
@@ -277,7 +292,7 @@ async function renderChapters() {
   }
   // Show pending unlock result banner (set after quiz completion)
   const bannerArea = document.getElementById('daily-progress-banner');
-  if (_pendingUnlockResult && bannerArea && appMode === 'practice') {
+  if (_pendingUnlockResult && bannerArea && state.appMode === 'practice') {
     const r = _pendingUnlockResult;
     _pendingUnlockResult = null;
     const isPass = r.passed;
@@ -299,7 +314,7 @@ async function renderChapters() {
     const col = CHAP_COLORS[originalIdx % CHAP_COLORS.length];
     const dayData = getDailyDone(c);
     const chapNum = parseInt((c.id.match(/\d+$/) || [i+1])[0]);
-    const visLimit = getChapterLimitForSubject(selection.subject?.uiId || selection.subject?.id);
+    const visLimit = getChapterLimitForSubject(state.selection.subject?.uiId || state.selection.subject?.id);
     const adminLocked = chapNum > visLimit;
 
     // Progression lock (practice mode only, overrides nothing when admin-locked)
@@ -323,8 +338,8 @@ async function renderChapters() {
     let status;
     if (isCleared) {
       status = `<span class="ch-card-status" style="color:#059669">✅ ${_ta('Cleared','முடிந்தது')} · ${unlockData.best_score}%</span>`;
-    } else if (userPlan === 'unlimited') {
-      const chapStats = progress.chapters?.[c.label] || progress.chapters?.[c.id] || null;
+    } else if (state.userPlan === 'unlimited') {
+      const chapStats = state.progress.chapters?.[c.label] || state.progress.chapters?.[c.id] || null;
       const passed = chapStats?.correct || 0;
       const failed = chapStats ? (chapStats.total - chapStats.correct) : 0;
       status = chapStats
@@ -335,8 +350,8 @@ async function renderChapters() {
         ? `<span class="ch-card-status" style="color:#059669">✅ ${dayData.count} ${_ta('answered today','இன்று பதிலளித்தது')}</span>`
         : `<span class="ch-card-status" style="color:#6b7280">▶ ${_ta('Practice Now','இப்போது பயிற்சி செய்')}</span>`;
     } else {
-      const subjectDone = getSubjectDailyTotal() >= FREE_DAILY_LIMIT;
-      const subjectRemaining = Math.max(0, FREE_DAILY_LIMIT - getSubjectDailyTotal());
+      const subjectDone = getSubjectDailyTotal() >= state.FREE_DAILY_LIMIT;
+      const subjectRemaining = Math.max(0, state.FREE_DAILY_LIMIT - getSubjectDailyTotal());
       status = subjectDone
         ? `<span class="ch-card-status" style="color:#059669">✅ ${_ta('Daily limit reached','இன்றைய வரம்பு முடிந்தது')}</span>`
         : `<span class="ch-card-status" style="color:#6b7280">📝 ${subjectRemaining} ${_ta('left today','இன்று மீதம்')}</span>`;
@@ -360,7 +375,7 @@ async function renderChapters() {
         accBadge = `<span style="font-size:.65rem;color:var(--muted);margin-top:.2rem;display:block">${_ta('Not attempted','முயற்சிக்கப்படவில்லை')}</span>`;
       }
     }
-    const chapDone = userPlan === 'free' && getSubjectDailyTotal() >= FREE_DAILY_LIMIT;
+    const chapDone = state.userPlan === 'free' && getSubjectDailyTotal() >= state.FREE_DAILY_LIMIT;
     return `<button class="ch-card${adminLocked ? ' ch-locked' : ''}" style="background:${col.bg};border:2px solid ${col.border};position:relative"
       ${(chapDone || adminLocked) ? 'disabled' : `onclick="selectChapter('${c.id}')"`}>
       <div class="ch-card-body">
@@ -376,34 +391,34 @@ async function renderChapters() {
   document.getElementById('reset-note').textContent = isPremium ? '' : `⏰ Resets at midnight · Next reset in ${getTimeUntilMidnight()}`;
 }
 
-async function selectChapter(chapterId) {
-  const chapter = selection.subject.chapters.find(c => c.id === chapterId);
+export async function selectChapter(chapterId) {
+  const chapter = state.selection.subject.chapters.find(c => c.id === chapterId);
   if (!chapter) return;
-  selection.chapter = chapter;
+  state.selection.chapter = chapter;
   // save recommended chapter for session cards
-  const _lid = selection.language?.id, _sid = selection.standard?.id;
+  const _lid = state.selection.language?.id, _sid = state.selection.standard?.id;
   if (_lid && _sid) {
-    try { localStorage.setItem('examace_rec_'+_lid+'_'+_sid, JSON.stringify({subjId:selection.subject?.id, subjLabel:selection.subject?.label, chapId:chapter.id, chapLabel:chapter.label})); } catch(e) {}
+    try { localStorage.setItem('examace_rec_'+_lid+'_'+_sid, JSON.stringify({subjId:state.selection.subject?.id, subjLabel:state.selection.subject?.label, chapId:chapter.id, chapLabel:chapter.label})); } catch(e) {}
   }
-  if (appMode === 'flashcard' || appMode === 'truefalse') { startFlashcards(chapter); return; }
+  if (state.appMode === 'flashcard' || state.appMode === 'truefalse') { startFlashcards(chapter); return; }
   if (isDailyComplete(chapter)) {
     document.getElementById('done-chapter').textContent = _chapLabel(chapter.label);
     const limitEl = document.getElementById('done-limit');
-    if (limitEl) limitEl.textContent = `${FREE_DAILY_LIMIT} questions`;
+    if (limitEl) limitEl.textContent = `${state.FREE_DAILY_LIMIT} questions`;
     const subLimitEl = document.getElementById('done-subject-limit');
-    if (subLimitEl) subLimitEl.textContent = `${FREE_DAILY_LIMIT} questions`;
+    if (subLimitEl) subLimitEl.textContent = `${state.FREE_DAILY_LIMIT} questions`;
     updateResetTimer();
     showScreen('daily-done');
     return;
   }
   document.getElementById('chapter-list').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><p>Loading questions…</p></div>';
   try {
-    const allQs = await fetchQuestions({ language: selection.language.label, standard: selection.standard.id, subject: selection.subject.dbLabel || selection.subject.label, chapterId: chapter.id});
+    const allQs = await fetchQuestions({ language: state.selection.language.label, standard: state.selection.standard.id, subject: state.selection.subject.dbLabel || state.selection.subject.label, chapterId: chapter.id});
     const dayData = getDailyDone(chapter);
     const seen = new Set(dayData.seen || []);
     const fresh = allQs.filter(q => !seen.has(qFingerprint(q)));
-    const isPremiumOrUnlimited = userPlan === 'premium' || userPlan === 'unlimited';
-    const remaining = isPremiumOrUnlimited ? allQs.length : Math.max(0, FREE_DAILY_LIMIT - getSubjectDailyTotal());
+    const isPremiumOrUnlimited = state.userPlan === 'premium' || state.userPlan === 'unlimited';
+    const remaining = isPremiumOrUnlimited ? allQs.length : Math.max(0, state.FREE_DAILY_LIMIT - getSubjectDailyTotal());
     const pool = isPremiumOrUnlimited ? allQs : (fresh.length >= remaining ? fresh : allQs);
     const qs = shuffle(pool).slice(0, remaining);
     if (!qs.length) { renderChapters(); showScreen('chapters'); return; }
@@ -416,7 +431,7 @@ async function selectChapter(chapterId) {
       _showResumePrompt(qs, chapter, progressKey, savedIdx);
     } else {
       localStorage.removeItem(progressKey);
-      practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
+      state.practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
       renderPracticeQ();
       showScreen('practice-quiz');
     }
@@ -433,7 +448,7 @@ function _showResumePrompt(qs, chapter, progressKey, savedIdx) {
   const overlay = document.getElementById('resume-prompt-overlay');
   if (!overlay) {
     // Fallback: just start fresh if overlay HTML not present
-    practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
+    state.practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
     renderPracticeQ(); showScreen('practice-quiz'); return;
   }
   document.getElementById('resume-q-num').textContent = savedIdx + 1;
@@ -451,29 +466,29 @@ function _showResumePrompt(qs, chapter, progressKey, savedIdx) {
   overlay.style.display = 'flex';
   overlay._continueHandler = () => {
     overlay.style.display = 'none';
-    practiceState = { questions: qs, idx: savedIdx, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
+    state.practiceState = { questions: qs, idx: savedIdx, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
     renderPracticeQ(); showScreen('practice-quiz');
   };
   overlay._restartHandler = () => {
     overlay.style.display = 'none';
     localStorage.removeItem(progressKey);
-    practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
+    state.practiceState = { questions: qs, idx: 0, answers: {}, skipDaily: false, chapter, start: Date.now(), progressKey };
     renderPracticeQ(); showScreen('practice-quiz');
   };
   document.getElementById('resume-continue-btn').onclick = overlay._continueHandler;
   document.getElementById('resume-restart-btn').onclick = overlay._restartHandler;
 }
 
-async function startGrandTestNow() {
+export async function startGrandTestNow() {
   const name = document.getElementById('grand-name').value.trim();
   if (!name) { document.getElementById('grand-err').style.display = 'block'; return; }
   document.getElementById('grand-err').style.display = 'none';
   const btn = document.querySelector('#screen-grand-setup .btn-danger');
   btn.textContent = 'Loading…'; btn.disabled = true;
   try {
-    const subjects = selection.standard?.subjects || [];
+    const subjects = state.selection.standard?.subjects || [];
     const results = await Promise.all(subjects.map(s =>
-      fetchAllSubjectQuestions(selection.language.label, selection.standard.id, s)
+      fetchAllSubjectQuestions(state.selection.language.label, state.selection.standard.id, s)
     ));
     const perSubj = Math.floor(180 / Math.max(subjects.length, 1));
     let qs = [];
@@ -481,13 +496,13 @@ async function startGrandTestNow() {
       qs = qs.concat(shuffle(subQs.map(q => ({ ...q, subject: subjects[i]?.label || q.subject }))).slice(0, perSubj));
     });
     qs = shuffle(qs).slice(0, 180);
-    timedState = { questions: qs, idx: 0, answers: {}, marked: {}, secs: 11700, totalSecs: 11700, timer: null, start: Date.now(), name };
+    state.timedState = { questions: qs, idx: 0, answers: {}, marked: {}, secs: 11700, totalSecs: 11700, timer: null, start: Date.now(), name };
     document.getElementById('tq-total').textContent = qs.length;
     updateTimerDisplay();
     renderTimedQ();
     renderQNav();
     showScreen('timed-quiz');
-    timedState.timer = setInterval(timerTick, 1000);
+    state.timedState.timer = setInterval(timerTick, 1000);
   } catch(e) {
     alert('Failed to load questions: ' + e.message);
   } finally {
@@ -495,3 +510,10 @@ async function startGrandTestNow() {
   }
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.openFlow = openFlow;
+window.selectLang = selectLang;
+window.selectClass = selectClass;
+window.selectSubject = selectSubject;
+window.selectChapter = selectChapter;
+window.startGrandTestNow = startGrandTestNow;

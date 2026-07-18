@@ -1,3 +1,7 @@
+import { db, state, PREMIUM_DAILY_LIMIT, ADMIN_EMAIL } from './state.js';
+import { _ta } from './i18n.js';
+import { initApp } from './app.js';
+
 document.addEventListener('DOMContentLoaded', async () => {
   const ni = document.getElementById('timed-name');
   if (ni) ni.addEventListener('focus', () => ni.style.borderColor = 'var(--gold)');
@@ -10,7 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check for an existing session
   const { data: { session } } = await db.auth.getSession();
   if (session?.user) {
-    authUser = session.user;
+    state.authUser = session.user;
     await loadUserPlan();
     await initApp();
   } else {
@@ -20,10 +24,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // React to auth state changes across tabs / email confirmation
   db.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_OUT') {
-      authUser = null; userPlan = 'free'; DAILY_LIMIT = FREE_DAILY_LIMIT;
+      state.authUser = null; state.userPlan = 'free'; state.DAILY_LIMIT = state.FREE_DAILY_LIMIT;
       showGuestLanding();
-    } else if (event === 'SIGNED_IN' && session?.user && !authUser) {
-      authUser = session.user;
+    } else if (event === 'SIGNED_IN' && session?.user && !state.authUser) {
+      state.authUser = session.user;
       await loadUserPlan();
       await initApp();
     }
@@ -31,7 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
-function showGuestLanding() {
+export function showGuestLanding() {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-home').classList.add('active');
   document.getElementById('screen-auth-login').style.display = 'none';
@@ -53,14 +57,14 @@ function showGuestLanding() {
   if (bnav) bnav.style.display = 'none';
 }
 
-function showAuthScreen(screen) {
+export function showAuthScreen(screen) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-auth-login').style.display = screen === 'login' ? 'flex' : 'none';
   document.getElementById('screen-auth-register').style.display = screen === 'register' ? 'flex' : 'none';
   document.getElementById('screen-plan').style.display = 'none';
 }
 
-function showPlanScreen() {
+export function showPlanScreen() {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-auth-login').style.display = 'none';
   document.getElementById('screen-auth-register').style.display = 'none';
@@ -68,8 +72,8 @@ function showPlanScreen() {
   selectPlan('free');
 }
 
-function selectPlan(plan) {
-  selectedPlan = plan;
+export function selectPlan(plan) {
+  state.selectedPlan = plan;
   document.getElementById('plan-free-card').classList.toggle('selected', plan === 'free');
   document.getElementById('plan-premium-card').classList.toggle('selected', plan === 'premium');
   const unlimitedCard = document.getElementById('plan-unlimited-card');
@@ -77,17 +81,17 @@ function selectPlan(plan) {
   document.getElementById('plan-btn').textContent = plan === 'premium' ? 'Get Premium →' : (plan === 'unlimited' ? 'Get Unlimited Pro →' : 'Continue with Free');
 }
 
-async function confirmPlan() {
+export async function confirmPlan() {
   const btn = document.getElementById('plan-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
-  await db.from('user_profiles').upsert({ id: authUser.id, plan: selectedPlan }, { onConflict: 'id' });
-  userPlan = selectedPlan;
-  DAILY_LIMIT = (userPlan === 'premium' || userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
+  await db.from('user_profiles').upsert({ id: state.authUser.id, plan: state.selectedPlan }, { onConflict: 'id' });
+  state.userPlan = state.selectedPlan;
+  state.DAILY_LIMIT = (state.userPlan === 'premium' || state.userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : state.FREE_DAILY_LIMIT;
   btn.disabled = false;
   await initApp();
 }
 
-async function handleLogin() {
+export async function handleLogin() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-err');
@@ -106,12 +110,12 @@ async function handleLogin() {
     errEl.style.display = 'block';
     return;
   }
-  authUser = data.user;
+  state.authUser = data.user;
   await loadUserPlan();
   await initApp();
 }
 
-async function handleRegister() {
+export async function handleRegister() {
   const name = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
@@ -124,13 +128,13 @@ async function handleRegister() {
   const { data, error } = await db.auth.signUp({ email, password, options: { data: { display_name: name } } });
   btn.disabled = false; btn.textContent = 'Create Account';
   if (error) { errEl.textContent = error.message; errEl.style.display = 'block'; return; }
-  authUser = data.user;
+  state.authUser = data.user;
   // user_profiles row is created server-side by the on_auth_user_created_profile
   // trigger (036_user_profiles_signup_trigger.sql) — no client-side insert needed.
   showPlanScreen();
 }
 
-async function showForgotPassword() {
+export async function showForgotPassword() {
   const email = document.getElementById('login-email').value.trim();
   const errEl = document.getElementById('login-err');
   errEl.style.display = 'none'; errEl.style.color = ''; errEl.style.background = '';
@@ -145,31 +149,31 @@ async function showForgotPassword() {
   setTimeout(() => { errEl.style.display = 'none'; errEl.style.color = ''; errEl.style.background = ''; errEl.textContent = ''; }, 6000);
 }
 
-async function handleLogout() {
+export async function handleLogout() {
   if (!confirm('Sign out?')) return;
   await db.auth.signOut();
-  mistakes = []; progress = { total: 0, correct: 0, wrong: 0, time: 0, subjects: {}, chapters: {}, history: [] };
-  localLeaderboard = []; manifest = null; dailyCache = {};
+  state.mistakes = []; state.progress = { total: 0, correct: 0, wrong: 0, time: 0, subjects: {}, chapters: {}, history: [] };
+  state.localLeaderboard = []; state.manifest = null; state.dailyCache = {};
   try { localStorage.clear(); } catch (e) {}
-  authUser = null; userPlan = 'free'; DAILY_LIMIT = FREE_DAILY_LIMIT;
+  state.authUser = null; state.userPlan = 'free'; state.DAILY_LIMIT = state.FREE_DAILY_LIMIT;
   showGuestLanding();
 }
 
-async function loadUserPlan() {
+export async function loadUserPlan() {
   try {
     let plan = 'free';
-    const { data: up } = await db.from('user_profiles').select('plan,display_name,lang_id,standard').eq('id', authUser.id).single();
+    const { data: up } = await db.from('user_profiles').select('plan,display_name,lang_id,standard').eq('id', state.authUser.id).single();
     if (up) {
       plan = up.plan || 'free';
-      window.currentLang  = up.lang_id === 2 ? 'ta' : 'en';
-      window.currentClass = up.standard || '12th';
+      state.currentLang  = up.lang_id === 2 ? 'ta' : 'en';
+      state.currentClass = up.standard || '12th';
     }
-    userPlan = plan;
-    DAILY_LIMIT = (userPlan === 'premium' || userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
-  } catch (e) { userPlan = 'free'; DAILY_LIMIT = FREE_DAILY_LIMIT; }
+    state.userPlan = plan;
+    state.DAILY_LIMIT = (state.userPlan === 'premium' || state.userPlan === 'unlimited') ? PREMIUM_DAILY_LIMIT : state.FREE_DAILY_LIMIT;
+  } catch (e) { state.userPlan = 'free'; state.DAILY_LIMIT = state.FREE_DAILY_LIMIT; }
 }
 
-async function signInWithGoogle() {
+export async function signInWithGoogle() {
   try {
     const { error } = await db.auth.signInWithOAuth({
       provider: 'google',
@@ -183,3 +187,13 @@ async function signInWithGoogle() {
   }
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.handleLogin = handleLogin;
+window.handleRegister = handleRegister;
+window.handleLogout = handleLogout;
+window.confirmPlan = confirmPlan;
+window.selectPlan = selectPlan;
+window.showForgotPassword = showForgotPassword;
+window.showAuthScreen = showAuthScreen;
+window.showGuestLanding = showGuestLanding;
+window.signInWithGoogle = signInWithGoogle;

@@ -1,5 +1,10 @@
-async function renderDashboard() {
-  const { total, correct, wrong, subjects, chapters, time } = progress;
+import { db, state } from './state.js';
+import { buildQuestion } from './db.js';
+import { showScreen } from './navigation.js';
+import { renderPracticeQ } from './quiz.js';
+
+export async function renderDashboard() {
+  const { total, correct, wrong, subjects, chapters, time } = state.progress;
   const acc = total > 0 ? Math.round(correct / total * 100) : 0;
   const bestSubj  = Object.entries(subjects).sort((a, b) => b[1].correct / b[1].total - a[1].correct / a[1].total)[0];
   const worstSubj = Object.entries(subjects).sort((a, b) => a[1].correct / a[1].total - b[1].correct / b[1].total)[0];
@@ -18,13 +23,13 @@ async function renderDashboard() {
   document.getElementById('dash-trend').innerHTML   = loading;
   document.getElementById('dash-subject').innerHTML = loading;
   document.getElementById('dash-chapters').innerHTML = loading;
-  if (!authUser) return;
+  if (!state.authUser) return;
 
   try {
     const [perfRes, sessRes, chapRes] = await Promise.all([
-      db.from('topic_performance').select('subject, chapter_id, total, correct').eq('user_id', authUser.id),
+      db.from('topic_performance').select('subject, chapter_id, total, correct').eq('user_id', state.authUser.id),
       db.from('exam_sessions').select('neet_score, total_q, completed_at, mode')
-        .eq('user_id', authUser.id).order('completed_at', { ascending: false }).limit(10),
+        .eq('user_id', state.authUser.id).order('completed_at', { ascending: false }).limit(10),
       db.from('chapters').select('id, label')
     ]);
 
@@ -106,8 +111,8 @@ async function renderDashboard() {
   }
 }
 
-async function loadWrongAnswers() {
-  if (!authUser) { wrongAnswers = []; return; }
+export async function loadWrongAnswers() {
+  if (!state.authUser) { state.wrongAnswers = []; return; }
   try {
     // Flat schema — question_translations/options are always empty in this
     // project, see js/db.js fetchQuestions Layer 2.
@@ -118,12 +123,12 @@ async function loadWrongAnswers() {
           id, subject, chapter_label, correct_option, question, options, explanation
         )
       `)
-      .eq('user_id', authUser.id)
+      .eq('user_id', state.authUser.id)
       .eq('is_mastered', false)
       .order('times_wrong', { ascending: false })
       .limit(50);
-    if (error || !data) { wrongAnswers = []; return; }
-    wrongAnswers = data.map(row => {
+    if (error || !data) { state.wrongAnswers = []; return; }
+    state.wrongAnswers = data.map(row => {
       const q = row.questions;
       const optMap = { A: q.options?.[0], B: q.options?.[1], C: q.options?.[2], D: q.options?.[3] };
       return {
@@ -138,18 +143,18 @@ async function loadWrongAnswers() {
         optMap
       };
     });
-  } catch(e) { wrongAnswers = []; }
+  } catch(e) { state.wrongAnswers = []; }
 }
 
-async function renderMistakes() {
+export async function renderMistakes() {
   const el = document.getElementById('mistakes-list');
   el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted)">Loading…</div>';
   await loadWrongAnswers();
-  if (!wrongAnswers.length) {
+  if (!state.wrongAnswers.length) {
     el.innerHTML = '<div class="empty-state"><div class="ei">🎉</div><p>No mistakes yet!</p></div>';
     return;
   }
-  el.innerHTML = wrongAnswers.map((m, i) => `
+  el.innerHTML = state.wrongAnswers.map((m, i) => `
     <div class="mistakes-item">
       <div style="margin-bottom:.4rem;display:flex;align-items:center;justify-content:space-between">
         <div><span class="chip chip-purple">${m.subject}</span> <span class="chip chip-blue">${m.chapter}</span></div>
@@ -161,21 +166,21 @@ async function renderMistakes() {
     </div>`).join('');
 }
 
-async function clearMistakes() {
+export async function clearMistakes() {
   if (!confirm('Mark all as mastered? They will no longer appear here.')) return;
-  if (authUser) {
+  if (state.authUser) {
     await db.from('wrong_answer_tracker')
       .update({ is_mastered: true })
-      .eq('user_id', authUser.id);
+      .eq('user_id', state.authUser.id);
   }
-  wrongAnswers = [];
+  state.wrongAnswers = [];
   renderMistakes();
 }
 
-async function practiceWrong() {
-  if (!wrongAnswers.length) await loadWrongAnswers();
-  if (!wrongAnswers.length) { alert('No mistakes to practice!'); return; }
-  const questions = wrongAnswers.slice(0, 20).map(m => buildQuestion({
+export async function practiceWrong() {
+  if (!state.wrongAnswers.length) await loadWrongAnswers();
+  if (!state.wrongAnswers.length) { alert('No mistakes to practice!'); return; }
+  const questions = state.wrongAnswers.slice(0, 20).map(m => buildQuestion({
     id: m.question_id,
     question_text: m.question_text,
     optMap: m.optMap,
@@ -185,12 +190,16 @@ async function practiceWrong() {
     chapter: m.chapter,
     subject: m.subject
   }));
-  practiceState = { questions, idx: 0, answers: {}, skipDaily: true, start: Date.now() };
+  state.practiceState = { questions, idx: 0, answers: {}, skipDaily: true, start: Date.now() };
   renderPracticeQ();
   showScreen('practice-quiz');
 }
 
-const SESSION_GRADIENTS = [
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.clearMistakes = clearMistakes;
+window.practiceWrong = practiceWrong;
+
+export const SESSION_GRADIENTS = [
   'linear-gradient(135deg,#0f766e 0%,#0d9488 100%)',
   'linear-gradient(135deg,#1e40af 0%,#3b82f6 100%)',
   'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)',
@@ -198,4 +207,3 @@ const SESSION_GRADIENTS = [
   'linear-gradient(135deg,#be123c 0%,#fb7185 100%)',
   'linear-gradient(135deg,#065f46 0%,#34d399 100%)',
 ];
-

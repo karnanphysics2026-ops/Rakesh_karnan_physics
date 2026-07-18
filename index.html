@@ -1096,30 +1096,27 @@ function resetLang() {
   </div>
 </div>
 
+<!-- ES modules — dependency order kept for readability; the module graph
+     itself (import/export) is what actually determines load/eval order. -->
+<script type="module" src="js/state.js"></script>
+<script type="module" src="js/i18n.js"></script>
+<script type="module" src="js/ui.js"></script>
+<script type="module" src="js/tamil.js"></script>
+<script type="module" src="js/db.js"></script>
+<script type="module" src="js/utils.js"></script>
+<script type="module" src="js/gamification.js"></script>
+<script type="module" src="js/navigation.js"></script>
+<script type="module" src="js/flow.js"></script>
+<script type="module" src="js/electrostatics.js"></script>
+<script type="module" src="js/data-ecf.js"></script>
+<script type="module" src="js/ecf.js"></script>
+<script type="module" src="js/quiz.js"></script>
+<script type="module" src="js/leaderboard.js"></script>
+<script type="module" src="js/dashboard.js"></script>
+<script type="module" src="js/home.js"></script>
+<script type="module" src="js/auth.js"></script>
+<script type="module" src="js/admin.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>
-
-<script>
-/* Global Tamil helpers — available to ALL scripts */
-function _isTa(){ return localStorage.getItem('lang')==='ta'; }
-function _ta(en,ta){ return _isTa()?ta:en; }
-</script>
-<script src="js/tamil.js"></script>
-<script src="js/config.js"></script>
-<script src="js/db.js"></script>
-<script src="js/utils.js"></script>
-<script src="js/gamification.js"></script>
-<script src="js/navigation.js"></script>
-<script src="js/flow.js"></script>
-<script src="js/electrostatics.js"></script>
-<script src="js/data-ecf.js"></script>
-<script src="js/ecf.js"></script>
-<script src="js/quiz.js"></script>
-<script src="js/leaderboard.js"></script>
-<script src="js/dashboard.js"></script>
-<script src="js/home.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/admin.js"></script>
-<script src="js/app.js"></script>
-</body>
 </html>

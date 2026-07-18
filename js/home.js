@@ -1,6 +1,15 @@
-// _isTa() and _ta() are defined globally in index.html
+import { state, _chapLabel } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { loadManifest } from './db.js';
+import { getFCDoneToday, getTFDoneToday } from './utils.js';
+import { showScreen, renderStepper } from './navigation.js';
+import { showUpgradePrompt } from './ui.js';
+import { openFlow, selectChapter, renderSubjectOptions } from './flow.js';
+import { SESSION_GRADIENTS } from './dashboard.js';
+import { openElectrostaticsMode } from './electrostatics.js';
+import { openECFMode } from './ecf.js';
 
-async function renderHomeSessions() {
+export async function renderHomeSessions() {
   const el = document.getElementById('home-sessions');
   if (!el) return;
   try {
@@ -8,7 +17,7 @@ async function renderHomeSessions() {
     const sessions = [];
     let idx = 0;
     const uiLang = localStorage.getItem('lang') || 'en';
-    (manifest.languages || []).forEach(lang => {
+    (state.manifest.languages || []).forEach(lang => {
       // Filter: Tamil UI → show only Tamil Medium; English UI → show only English Medium
       const langKey = (lang.id || lang.label || '').toLowerCase();
       const isTamilLang = langKey === 'tamil' || langKey.startsWith('tamil') || lang.label === 'Tamil';
@@ -57,17 +66,17 @@ async function renderHomeSessions() {
   }
 }
 
-async function quickStartSession(langId, stdId) {
-  appMode = 'practice';
-  selection = { language: null, standard: null, subject: null, chapter: null };
+export async function quickStartSession(langId, stdId) {
+  state.appMode = 'practice';
+  state.selection = { language: null, standard: null, subject: null, chapter: null };
   try {
     await loadManifest();
-    const lang = manifest.languages.find(l => l.id === langId);
+    const lang = state.manifest.languages.find(l => l.id === langId);
     if (!lang) { openFlow('practice'); return; }
-    selection.language = lang;
+    state.selection.language = lang;
     const std = lang.standards.find(s => s.id === stdId);
     if (!std) { openFlow('practice'); return; }
-    selection.standard = std;
+    state.selection.standard = std;
     // try to jump to recommended chapter
     let jumped = false;
     try {
@@ -76,11 +85,11 @@ async function quickStartSession(langId, stdId) {
         const subj = std.subjects.find(s => s.id === rec.subjId);
         const chap = subj?.chapters?.find(c => c.id === rec.chapId);
         if (subj && chap) {
-          selection.subject = subj;
+          state.selection.subject = subj;
           // find next chapter after rec (for "continue" feel)
           const chapIdx = subj.chapters.indexOf(chap);
           const nextChap = subj.chapters[chapIdx + 1] || chap; // use next or same if last
-          selection.chapter = nextChap;
+          state.selection.chapter = nextChap;
           selectChapter(nextChap.id);
           jumped = true;
         }
@@ -91,8 +100,8 @@ async function quickStartSession(langId, stdId) {
       const firstSubj = std.subjects.find(s => s.totalQuestions > 0) || std.subjects[0];
       const firstChap = firstSubj?.chapters?.find(c => c.count > 0) || firstSubj?.chapters?.[0];
       if (firstSubj && firstChap) {
-        selection.subject = firstSubj;
-        selection.chapter = firstChap;
+        state.selection.subject = firstSubj;
+        state.selection.chapter = firstChap;
         selectChapter(firstChap.id);
       } else {
         renderSubjectOptions();
@@ -103,18 +112,18 @@ async function quickStartSession(langId, stdId) {
   } catch(e) { openFlow('practice'); }
 }
 
-function renderHomeFeatures() {
+export function renderHomeFeatures() {
   const el = document.getElementById('home-features');
   if (!el) return;
-  const isFree = userPlan === 'free';
-  const isPrem = userPlan === 'premium' || userPlan === 'unlimited';
+  const isFree = state.userPlan === 'free';
+  const isPrem = state.userPlan === 'premium' || state.userPlan === 'unlimited';
   if (isFree) {
     const fcDone = getFCDoneToday();
     const tfDone = getTFDoneToday();
-    const fcPct = Math.min(100, Math.round(fcDone / FREE_FC_DAILY * 100));
-    const tfPct = Math.min(100, Math.round(tfDone / FREE_TF_DAILY * 100));
-    const fcDone5 = fcDone >= FREE_FC_DAILY;
-    const tfDone5 = tfDone >= FREE_TF_DAILY;
+    const fcPct = Math.min(100, Math.round(fcDone / state.FREE_FC_DAILY * 100));
+    const tfPct = Math.min(100, Math.round(tfDone / state.FREE_TF_DAILY * 100));
+    const fcDone5 = fcDone >= state.FREE_FC_DAILY;
+    const tfDone5 = tfDone >= state.FREE_TF_DAILY;
     el.innerHTML = `
     <div class="section-title">${_ta("Today's Practice",'இன்றைய பயிற்சி')}</div>
     <div class="daily-activity-card ${fcDone5 ? 'dac-done' : ''}" onclick="${fcDone5 ? '' : "openFlow('flashcard')"}">
@@ -124,7 +133,7 @@ function renderHomeFeatures() {
         <div class="dac-sub">${fcDone5 ? _ta('Completed for today!','இன்றைக்கு முடிந்தது!') : _ta('Flip cards to learn key facts','முக்கிய தகவல்களை அட்டைகளில் படிக்கவும்')}</div>
         <div class="dac-bar"><div class="dac-fill" style="background:var(--purple);width:${fcPct}%"></div></div>
       </div>
-      <div class="dac-count" style="color:${fcDone5 ? 'var(--success)' : 'var(--purple)'}">${fcDone5 ? '✓' : fcDone + '/' + FREE_FC_DAILY}</div>
+      <div class="dac-count" style="color:${fcDone5 ? 'var(--success)' : 'var(--purple)'}">${fcDone5 ? '✓' : fcDone + '/' + state.FREE_FC_DAILY}</div>
     </div>
     <div class="daily-activity-card ${tfDone5 ? 'dac-done' : ''}" onclick="${tfDone5 ? '' : "openFlow('truefalse')"}">
       <div class="dac-icon" style="background:#edfaf4">✅</div>
@@ -133,7 +142,7 @@ function renderHomeFeatures() {
         <div class="dac-sub">${tfDone5 ? _ta('Completed for today!','இன்றைக்கு முடிந்தது!') : _ta('Test what you know','உங்களுக்கு தெரிந்ததை சோதிக்கவும்')}</div>
         <div class="dac-bar"><div class="dac-fill" style="background:var(--success);width:${tfPct}%"></div></div>
       </div>
-      <div class="dac-count" style="color:${tfDone5 ? 'var(--success)' : '#00897b'}">${tfDone5 ? '✓' : tfDone + '/' + FREE_TF_DAILY}</div>
+      <div class="dac-count" style="color:${tfDone5 ? 'var(--success)' : '#00897b'}">${tfDone5 ? '✓' : tfDone + '/' + state.FREE_TF_DAILY}</div>
     </div>
     <div class="act-card act-practice" style="margin-top:.65rem;cursor:pointer" onclick="openElectrostaticsMode()">
       <div class="act-icon">⚡</div>
@@ -211,11 +220,11 @@ function renderHomeFeatures() {
   }
 }
 
-function renderHomeStats() {
-  const { total, correct } = progress;
+export function renderHomeStats() {
+  const { total, correct } = state.progress;
   const acc = total > 0 ? Math.round(correct / total * 100) : 0;
   let todayTotal = 0;
-  const today = getTodayKey();
+  const today = new Date().toISOString().split('T')[0];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -227,13 +236,13 @@ function renderHomeStats() {
   // streak: count consecutive days with activity from history
   let streak = 0;
   try {
-    const hist = (progress.history || []).map(h => h.date).filter(Boolean);
+    const hist = (state.progress.history || []).map(h => h.date).filter(Boolean);
     const daySet = new Set(hist);
     const d = new Date(); d.setHours(0,0,0,0);
     while (daySet.has(d.toISOString().split('T')[0])) { streak++; d.setDate(d.getDate()-1); }
   } catch(e) {}
-  const isFreeUser = userPlan === 'free';
-  const DAILY_GOAL = isFreeUser ? FREE_DAILY_LIMIT : 20;
+  const isFreeUser = state.userPlan === 'free';
+  const DAILY_GOAL = isFreeUser ? state.FREE_DAILY_LIMIT : 20;
   const pct = Math.min(100, Math.round(todayTotal / Math.max(DAILY_GOAL, 1) * 100));
   // daily goal card
   const dgCount = document.getElementById('dgc-count');
@@ -244,7 +253,7 @@ function renderHomeStats() {
     const fcDone = getFCDoneToday();
     const tfDone = getTFDoneToday();
     const totalDone = fcDone + tfDone;
-    const totalGoal = FREE_FC_DAILY + FREE_TF_DAILY;
+    const totalGoal = state.FREE_FC_DAILY + state.FREE_TF_DAILY;
     const pct2 = Math.min(100, Math.round(totalDone / totalGoal * 100));
     if (dgCount) dgCount.textContent = `${totalDone}/${totalGoal} Activities Today`;
     if (dgPct) dgPct.textContent = pct2 >= 100 ? '🎉 All done for today!' : `${fcDone}/5 Flashcards · ${tfDone}/5 True/False`;
@@ -274,9 +283,12 @@ function renderHomeStats() {
   if (ss) ss.textContent = streak > 0 ? streak : (total > 0 ? '1' : '0');
 }
 
-function shareApp() {
+export function shareApp() {
   const text = 'I am preparing for NEET UG using KARNAN. Try it here:\n' + location.href;
   if (navigator.share) navigator.share({ title: 'KARNAN — Empowering NEET UG Success', text, url: location.href }).catch(() => {});
   else navigator.clipboard?.writeText(text).then(() => alert('Link copied!')).catch(() => prompt('Copy this link:', location.href));
 }
 
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.shareApp = shareApp;
+window.quickStartSession = quickStartSession;

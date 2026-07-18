@@ -1,3 +1,11 @@
+import { db, state } from './state.js';
+import { _isTa, _ta } from './i18n.js';
+import { showToast } from './ui.js';
+import { showScreen } from './navigation.js';
+import { loadManifest, fetchQuestions, buildQuestion } from './db.js';
+import { qFingerprint, shuffle, getTimeUntilMidnight } from './utils.js';
+import { renderPracticeQ } from './quiz.js';
+
 // ── ELECTROSTATICS PRACTICE MODE ─────────────────────────────────────────────
 // Physics 12th · Electric Charges & Electrostatic Potential chapters
 // Daily limit: 20 questions (capped at pool size if smaller), resets at LOCAL midnight
@@ -9,8 +17,8 @@
 
 const ES_STORE_KEY  = 'electrostatics_practice';
 const ES_SESSION_KEY = 'karnan_electrostatics_active_session';
-function _esDailyMax() {
-  return adminConfig.electrostatics_daily_limit || 20;
+export function _esDailyMax() {
+  return state.adminConfig.electrostatics_daily_limit || 20;
 }
 // Chapter IDs for the two electrostatics chapters in Physics Class 12
 const ES_CHAPTER_IDS = ['chapter1', 'chapter2'];
@@ -24,7 +32,7 @@ function _esLocalDate() {
   return `${y}-${m}-${day}`;
 }
 
-function _esLoad() {
+export function _esLoad() {
   try { return JSON.parse(localStorage.getItem(ES_STORE_KEY) || 'null') || {}; }
   catch(e) { return {}; }
 }
@@ -37,28 +45,25 @@ function _esLoadSession() {
 function _esSaveSession(sessionState) {
   try { localStorage.setItem(ES_SESSION_KEY, JSON.stringify(sessionState)); } catch(e) {}
 }
-function _esClearSession() {
-  try { localStorage.removeItem(ES_SESSION_KEY); } catch(e) {}
-}
 
 // Reset daily counters if the local date has changed (handles midnight rollover)
-function _esCheckRollover(state) {
+function _esCheckRollover(esState) {
   const today = _esLocalDate();
-  if (state.lastDate !== today) {
-    state.lastDate        = today;
-    state.servedToday     = 0;
-    state.todaysQuestionIds = [];
+  if (esState.lastDate !== today) {
+    esState.lastDate        = today;
+    esState.servedToday     = 0;
+    esState.todaysQuestionIds = [];
   }
-  if (!state.cycleCount)     state.cycleCount     = 1;
-  if (!state.seenAllTimeIds) state.seenAllTimeIds  = [];
-  return state;
+  if (!esState.cycleCount)     esState.cycleCount     = 1;
+  if (!esState.seenAllTimeIds) esState.seenAllTimeIds  = [];
+  return esState;
 }
 
 // Fetch all questions from both electrostatics chapters for the active language
 async function _esBuildPool() {
   await loadManifest();
   const isT     = _isTa();
-  const langObj  = manifest.languages.find(l => l.id === (isT ? 'tamil' : 'english'));
+  const langObj  = state.manifest.languages.find(l => l.id === (isT ? 'tamil' : 'english'));
   const language = langObj?.label || (isT ? 'Tamil' : 'English');
   const standard = '12th';
   const subject  = 'Physics';
@@ -70,19 +75,19 @@ async function _esBuildPool() {
 }
 
 // Select up to `quota` questions: unseen first, then top-up from seen.
-// Mutates `state.seenAllTimeIds` and `state.cycleCount` when pool exhausted.
-function _esPickQuestions(pool, state, quota) {
-  const todaySet = new Set(state.todaysQuestionIds || []);
+// Mutates `esState.seenAllTimeIds` and `esState.cycleCount` when pool exhausted.
+function _esPickQuestions(pool, esState, quota) {
+  const todaySet = new Set(esState.todaysQuestionIds || []);
   // Questions not yet served today
   const eligible = pool.filter(q => !todaySet.has(q.id || qFingerprint(q)));
 
-  const seenSet  = new Set(state.seenAllTimeIds || []);
+  const seenSet  = new Set(esState.seenAllTimeIds || []);
   let   unseen   = eligible.filter(q => !seenSet.has(q.id || qFingerprint(q)));
 
   // Pool fully exhausted → start a fresh cycle
   if (unseen.length === 0 && eligible.length > 0) {
-    state.seenAllTimeIds = [];
-    state.cycleCount     = (state.cycleCount || 1) + 1;
+    esState.seenAllTimeIds = [];
+    esState.cycleCount     = (esState.cycleCount || 1) + 1;
     seenSet.clear();
     unseen = [...eligible];
   }
@@ -100,7 +105,7 @@ function _esPickQuestions(pool, state, quota) {
 
 // ── PUBLIC API ────────────────────────────────────────────────────────────────
 
-async function openElectrostaticsMode() {
+export async function openElectrostaticsMode() {
   showScreen('electrostatics');
   const loadEl    = document.getElementById('es-load-msg');
   const contentEl = document.getElementById('es-content');
@@ -111,10 +116,10 @@ async function openElectrostaticsMode() {
 
   try {
     const pool  = await _esBuildPool();
-    let   state = _esLoad();
-    state = _esCheckRollover(state);
-    _esSave(state);
-    _esRenderScreen(state, pool.length);
+    let   esState = _esLoad();
+    esState = _esCheckRollover(esState);
+    _esSave(esState);
+    _esRenderScreen(esState, pool.length);
   } catch(e) {
     if (loadEl) loadEl.innerHTML =
       `<div class="info-box" style="color:var(--danger)">${
@@ -124,15 +129,15 @@ async function openElectrostaticsMode() {
   }
 }
 
-function _esRenderScreen(state, poolSize) {
+function _esRenderScreen(esState, poolSize) {
   const limit   = Math.min(_esDailyMax(), poolSize);
-  const served  = state.servedToday || 0;
-  
+  const served  = esState.servedToday || 0;
+
   // Check active session status
   const activeSession = _esLoadSession();
   const hasActive = activeSession && activeSession.questions && activeSession.questions.length > 0 &&
                     Object.keys(activeSession.answers || {}).length < activeSession.questions.length;
-                    
+
   const isDone  = served >= limit && !hasActive;
 
   const loadEl    = document.getElementById('es-load-msg');
@@ -151,8 +156,8 @@ function _esRenderScreen(state, poolSize) {
   // Cycle badge (only after round 1)
   const cycleBadge = document.getElementById('es-cycle-badge');
   if (cycleBadge) {
-    if ((state.cycleCount || 1) > 1) {
-      cycleBadge.textContent = _ta(`Round ${state.cycleCount}`, `சுழற்சி ${state.cycleCount}`);
+    if ((esState.cycleCount || 1) > 1) {
+      cycleBadge.textContent = _ta(`Round ${esState.cycleCount}`, `சுழற்சி ${esState.cycleCount}`);
       cycleBadge.style.display = 'inline-block';
     } else {
       cycleBadge.style.display = 'none';
@@ -225,25 +230,25 @@ async function _esFetchDailyQuiz(dateStr) {
 
 async function _esFetchQuestionsByIds(ids) {
   if (!ids || ids.length === 0) return [];
-  
+
   // 1. Fetch tags for the input IDs
   const { data: tagData, error: tagErr } = await db
     .from('questions')
     .select('question_tag')
     .in('id', ids);
-    
+
   if (tagErr || !tagData) return [];
   const tags = tagData.map(t => t.question_tag);
-  
+
   // 2. Map tags to current language equivalents
   const targetTags = tags.map(tag => {
-    if (window.currentLang === 'ta') {
+    if (state.currentLang === 'ta') {
       return tag.replace('ENPHY12EN', 'TAPHY12TA');
     } else {
       return tag.replace('TAPHY12TA', 'ENPHY12EN');
     }
   });
-  
+
   const allTags = [...new Set([...targetTags, ...tags])];
 
   // 3. Query questions (flat schema — question_translations/options are
@@ -264,7 +269,7 @@ async function _esFetchQuestionsByIds(ids) {
       explanation: r.explanation, topic: r.topic || r.chapter_label,
       chapter: r.chapter_label || '', tag: r.question_tag || '', subject: 'Physics' });
   });
-  
+
   // 4. Sort and fallback
   return targetTags.map((targetTag, idx) => {
     let q = mapped.find(item => item.tag === targetTag);
@@ -276,7 +281,7 @@ async function _esFetchQuestionsByIds(ids) {
   }).filter(Boolean);
 }
 
-async function startElectrostaticsSession() {
+export async function startElectrostaticsSession() {
   const btn = document.getElementById('es-start-btn');
   if (btn) { btn.disabled = true; btn.textContent = _ta('Loading…', 'ஏற்றுகிறது…'); }
 
@@ -287,7 +292,7 @@ async function startElectrostaticsSession() {
     let answers = {};
     let sessionStart = Date.now();
     let quizId = null;
-    
+
     // Check if we can hydrate/restore the active session
     if (savedSession && savedSession.questions && savedSession.questions.length > 0 &&
         Object.keys(savedSession.answers || {}).length < savedSession.questions.length) {
@@ -305,23 +310,23 @@ async function startElectrostaticsSession() {
       } catch(e) {
         console.error('Failed to check daily quiz:', e);
       }
-      
+
       if (dailyQuiz && dailyQuiz.daily_quiz_questions && dailyQuiz.daily_quiz_questions.length > 0) {
         quizId = dailyQuiz.id;
         const qIds = dailyQuiz.daily_quiz_questions
           .sort((a, b) => a.sequence_num - b.sequence_num)
           .map(q => q.question_id);
         questions = await _esFetchQuestionsByIds(qIds);
-        
+
         // Mark these questions as seen
-        let state = _esLoad();
-        state = _esCheckRollover(state);
+        let esState = _esLoad();
+        esState = _esCheckRollover(esState);
         const pickedIds = questions.map(q => q.id || qFingerprint(q));
-        state.seenAllTimeIds     = [...(state.seenAllTimeIds || []),     ...pickedIds];
-        state.todaysQuestionIds  = [...(state.todaysQuestionIds || []),  ...pickedIds];
-        state.servedToday        = (state.servedToday || 0) + questions.length;
-        _esSave(state);
-        
+        esState.seenAllTimeIds     = [...(esState.seenAllTimeIds || []),     ...pickedIds];
+        esState.todaysQuestionIds  = [...(esState.todaysQuestionIds || []),  ...pickedIds];
+        esState.servedToday        = (esState.servedToday || 0) + questions.length;
+        _esSave(esState);
+
         // Save initial session state
         _esSaveSession({
           questions,
@@ -333,14 +338,14 @@ async function startElectrostaticsSession() {
       } else {
         // Start a fresh random practice session
         const pool  = await _esBuildPool();
-        let   state = _esLoad();
-        state = _esCheckRollover(state); // re-check in case midnight passed since page opened
+        let   esState = _esLoad();
+        esState = _esCheckRollover(esState); // re-check in case midnight passed since page opened
         const limit   = Math.min(_esDailyMax(), pool.length);
-        const remaining = limit - (state.servedToday || 0);
+        const remaining = limit - (esState.servedToday || 0);
 
-        if (remaining <= 0) { _esRenderScreen(state, pool.length); return; }
+        if (remaining <= 0) { _esRenderScreen(esState, pool.length); return; }
 
-        questions = _esPickQuestions(pool, state, remaining);
+        questions = _esPickQuestions(pool, esState, remaining);
         if (!questions.length) {
           showToast(_ta('No questions available.', 'கேள்விகள் எதுவும் இல்லை.'));
           if (btn) { btn.disabled = false; btn.textContent = _ta('Start Practice →', 'பயிற்சி தொடங்கு →'); }
@@ -349,10 +354,10 @@ async function startElectrostaticsSession() {
 
         // Persist served IDs BEFORE quiz so midnight rollover on open-tab is handled
         const pickedIds = questions.map(q => q.id || qFingerprint(q));
-        state.seenAllTimeIds     = [...(state.seenAllTimeIds || []),     ...pickedIds];
-        state.todaysQuestionIds  = [...(state.todaysQuestionIds || []),  ...pickedIds];
-        state.servedToday        = (state.servedToday || 0) + questions.length;
-        _esSave(state);
+        esState.seenAllTimeIds     = [...(esState.seenAllTimeIds || []),     ...pickedIds];
+        esState.todaysQuestionIds  = [...(esState.todaysQuestionIds || []),  ...pickedIds];
+        esState.servedToday        = (esState.servedToday || 0) + questions.length;
+        _esSave(esState);
 
         // Save initial session state
         _esSaveSession({
@@ -366,24 +371,24 @@ async function startElectrostaticsSession() {
     }
 
     // Wire up selection so progress-tracking helpers have context
-    appMode = 'electrostatics';
+    state.appMode = 'electrostatics';
     await loadManifest();
     const isT    = _isTa();
-    const langObj = manifest.languages.find(l => l.id === (isT ? 'tamil' : 'english')) || manifest.languages[0];
-    selection = {
+    const langObj = state.manifest.languages.find(l => l.id === (isT ? 'tamil' : 'english')) || state.manifest.languages[0];
+    state.selection = {
       language: langObj,
       standard: langObj?.standards?.find(s => s.id === '12th') || langObj?.standards?.[0] || null,
       subject:  null,
       chapter:  { id: 'electrostatics', label: 'Electrostatics' },
     };
-    selection.subject = selection.standard?.subjects?.find(s => s.id === 'physics') || null;
+    state.selection.subject = state.selection.standard?.subjects?.find(s => s.id === 'physics') || null;
 
-    practiceState = {
+    state.practiceState = {
       questions,
       idx,
       answers,
       skipDaily:   true,   // bypass per-chapter daily counters
-      chapter:     selection.chapter,
+      chapter:     state.selection.chapter,
       start:       sessionStart,
       progressKey: ES_SESSION_KEY,
       quizId:      quizId
@@ -396,3 +401,7 @@ async function startElectrostaticsSession() {
     if (btn) { btn.disabled = false; btn.textContent = _ta('Start Practice →', 'பயிற்சி தொடங்கு →'); }
   }
 }
+
+// Referenced from inline onclick="..." HTML attributes — see js/ui.js for why.
+window.openElectrostaticsMode = openElectrostaticsMode;
+window.startElectrostaticsSession = startElectrostaticsSession;
