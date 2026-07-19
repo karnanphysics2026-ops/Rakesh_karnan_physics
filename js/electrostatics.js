@@ -4,7 +4,7 @@ import { showToast } from './ui.js';
 import { showScreen } from './navigation.js';
 import { loadManifest, fetchQuestions, buildQuestion } from './db.js';
 import { qFingerprint, shuffle, getTimeUntilMidnight } from './utils.js';
-import { renderPracticeQ } from './quiz.js';
+import { renderPracticeQ } from './practice-quiz.js';
 
 // ── ELECTROSTATICS PRACTICE MODE ─────────────────────────────────────────────
 // Physics 12th · Electric Charges & Electrostatic Potential chapters

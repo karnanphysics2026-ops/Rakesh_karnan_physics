@@ -3,11 +3,10 @@ import { loadLeaderboard } from './leaderboard.js';
 import { renderDashboard, renderMistakes } from './dashboard.js';
 import { renderHomeStats, renderHomeFeatures } from './home.js';
 import { updateUpgradeBanner, renderProfileScreen } from './app.js';
-import { finishTimedTest } from './quiz.js';
-import {
-  renderDailyMissionCard, renderStreakWidget, renderHomeXPCard,
-  renderHomeAchievementsWidget, loadUserAchievements, renderAchievementsScreen,
-} from './gamification.js';
+import { finishTimedTest } from './timed-test.js';
+import { renderHomeXPCard } from './xp.js';
+import { renderDailyMissionCard, renderStreakWidget } from './streaks.js';
+import { renderHomeAchievementsWidget, loadUserAchievements, renderAchievementsScreen } from './achievements.js';
 
 function _hideAuthForms() {
   ['screen-auth-login','screen-auth-register','screen-plan'].forEach(id => {
@@ -42,6 +41,7 @@ export function showScreenPublic(name) {
 }
 export function confirmExit() { if (confirm('Exit quiz? Your progress will be lost.')) goHome(); }
 export function confirmSubmit() { if (confirm('Submit the test now?')) finishTimedTest(); }
+export function showCommunity() { showScreenPublic('community'); }
 
 export function renderStepper(step) {
   let steps;
@@ -69,3 +69,4 @@ window.goHome = goHome;
 window.showScreenPublic = showScreenPublic;
 window.confirmExit = confirmExit;
 window.confirmSubmit = confirmSubmit;
+window.showCommunity = showCommunity;

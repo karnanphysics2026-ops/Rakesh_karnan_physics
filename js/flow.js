@@ -8,10 +8,11 @@ import {
   isDailyComplete, getTimeUntilMidnight, qFingerprint, shuffle,
 } from './utils.js';
 import { getChapterLimitForSubject } from './admin.js';
+import { renderPracticeQ, updateResetTimer } from './practice-quiz.js';
+import { startFlashcards } from './flashcards.js';
 import {
-  renderPracticeQ, updateResetTimer, renderTimedDurationOptions, startFlashcards,
-  updateTimerDisplay, renderTimedQ, renderQNav, timerTick,
-} from './quiz.js';
+  renderTimedDurationOptions, updateTimerDisplay, renderTimedQ, renderQNav, timerTick,
+} from './timed-test.js';
 
 // ── Chapter progression unlock state ─────────────────────────────────────────
 let _chapUnlockMap       = {};   // { chapter1: { attempt_no, best_score, is_cleared }, ... }

@@ -4,7 +4,8 @@ import { db } from './state.js';
 import { ECF_QUESTIONS } from './data-ecf.js';
 import { showScreen } from './navigation.js';
 import { saveStorage } from './db.js';
-import { awardXP, incrementDailyTarget } from './gamification.js';
+import { awardXP } from './xp.js';
+import { incrementDailyTarget } from './streaks.js';
 import { getTimeUntilMidnight } from './utils.js';
 
 // ── ELECTRIC CHARGES AND FIELDS — DAILY PRACTICE MODE ────────────────────────

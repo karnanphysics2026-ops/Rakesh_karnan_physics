@@ -1,7 +1,7 @@
 import { db, state } from './state.js';
 import { buildQuestion } from './db.js';
 import { showScreen } from './navigation.js';
-import { renderPracticeQ } from './quiz.js';
+import { renderPracticeQ } from './practice-quiz.js';
 
 export async function renderDashboard() {
   const { total, correct, wrong, subjects, chapters, time } = state.progress;
