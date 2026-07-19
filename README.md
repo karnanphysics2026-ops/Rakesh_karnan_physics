@@ -97,8 +97,8 @@ Apply SQL migrations in your Supabase SQL Editor in alphabetical sequence:
 
 ### Front-End Hosting
 The application can be hosted on static providers (Vercel, Netlify, or GitHub Pages):
-1.  Configure the build command: `npm run build` (or leave empty for static page routing).
-2.  Set the publish directory: `./`.
+1.  Configure the build command: `npm run build`.
+2.  Set the publish directory: `dist`.
 
 ### Supabase Settings
 1.  Add your production domain to the **Redirect URIs** whitelist in the Supabase Dashboard settings (**Auth** ➔ **URL Configuration**).

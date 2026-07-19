@@ -3202,3 +3202,8 @@ export const ECF_QUESTIONS = [
     "status": "active"
   }
 ];
+
+// class12/electrostatics/index.html (a standalone SEO landing page, not part
+// of the main app's module graph) loads this file as type="module" but reads
+// ECF_QUESTIONS as a plain global — expose it for that one consumer.
+if (typeof window !== 'undefined') window.ECF_QUESTIONS = ECF_QUESTIONS;
