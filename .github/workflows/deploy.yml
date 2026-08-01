@@ -24,11 +24,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
 
       - name: Build question JSON from Excel
-        run: python scripts/build_questions.py
+        run: |
+          if [ -d "source" ]; then
+            python scripts/build_questions.py
+          else
+            echo "No source directory found. Skipping Excel compilation and using pre-built JSON data."
+          fi
 
       - name: Import questions to Supabase
         if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_KEY != '' }}
@@ -38,13 +43,25 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python scripts/import_to_supabase.py --clear
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build static production files (Vite)
+        run: npm run build
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./
+          path: dist/
 
   deploy:
     needs: build
