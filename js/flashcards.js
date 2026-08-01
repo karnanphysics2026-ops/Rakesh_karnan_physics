@@ -3,7 +3,7 @@ import { _ta } from './i18n.js';
 import { showToast } from './ui.js';
 import { showScreen } from './navigation.js';
 import { fetchQuestions } from './db.js';
-import { getFCDoneToday, getTFDoneToday, incFCDone, incTFDone, shuffle, subjClass } from './utils.js';
+import { getFCDoneToday, getTFDoneToday, incFCDone, incTFDone, shuffle, subjClass, renderMath } from './utils.js';
 import { renderChapters } from './flow.js';
 
 // ── FLASHCARDS (spaced repetition, SM-2-style) + TRUE/FALSE QUIZ ────────────
@@ -105,16 +105,27 @@ function renderFlashcard() {
   const tagEl = document.getElementById('fc-tag');
   if (tagEl) tagEl.textContent = q.tag || '';
   // question & answer
-  document.getElementById('fc-question').textContent = q.question;
-  document.getElementById('fc-answer').textContent = q.options[q.correct];
+  const qEl = document.getElementById('fc-question');
+  qEl.innerHTML = q.question;
+  renderMath(qEl);
+
+  const aEl = document.getElementById('fc-answer');
+  aEl.innerHTML = q.options[q.correct];
+  renderMath(aEl);
+
   // example box (correct option text without letter prefix)
   const exampleEl = document.getElementById('fc-example-text');
-  if (exampleEl) exampleEl.textContent = q.options[q.correct];
+  if (exampleEl) {
+    exampleEl.innerHTML = q.options[q.correct];
+    renderMath(exampleEl);
+  }
+
   // exam tip from explanation
   const expEl = document.getElementById('fc-exp');
   const tipWrap = document.getElementById('fc-tip-wrap');
   if (q.explanation) {
-    expEl.textContent = q.explanation;
+    expEl.innerHTML = q.explanation;
+    renderMath(expEl);
     if (tipWrap) tipWrap.style.display = '';
   } else {
     if (tipWrap) tipWrap.style.display = 'none';

@@ -281,6 +281,85 @@ async function _esFetchQuestionsByIds(ids) {
   }).filter(Boolean);
 }
 
+async function _esParseCSV(text) {
+  const lines = [];
+  let row = [""];
+  let inQuotes = false;
+  
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i+1];
+    
+    if (c === '"') {
+      if (inQuotes && next === '"') {
+        row[row.length - 1] += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === ',' && !inQuotes) {
+      row.push("");
+    } else if ((c === '\r' || c === '\n') && !inQuotes) {
+      if (c === '\r' && next === '\n') i++;
+      lines.push(row);
+      row = [""];
+    } else {
+      row[row.length - 1] += c;
+    }
+  }
+  if (row.length > 1 || row[0] !== "") lines.push(row);
+  return lines;
+}
+
+async function _esFetchDailyQuizFromGoogleSheet(sheetId, dateStr) {
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch Google Sheet");
+  const text = await res.text();
+  
+  const rows = await _esParseCSV(text);
+  if (rows.length < 2) return [];
+  
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const dateIdx = headers.indexOf("publish date");
+  const idIdx = headers.indexOf("id") !== -1 ? headers.indexOf("id") : 0;
+  const qIdx = headers.indexOf("question");
+  const aIdx = headers.indexOf("option a");
+  const bIdx = headers.indexOf("option b");
+  const cIdx = headers.indexOf("option c");
+  const dIdx = headers.indexOf("option d");
+  const correctIdx = headers.indexOf("correct option");
+  const expIdx = headers.indexOf("explanation");
+  const tagIdx = headers.indexOf("tag");
+  const subIdx = headers.indexOf("subject");
+  const chapIdx = headers.indexOf("chapter");
+  
+  const todayRows = rows.slice(1).filter(row => {
+    if (dateIdx === -1) return true; // if no date column, load all
+    return row[dateIdx]?.trim() === dateStr;
+  });
+  
+  return todayRows.map(row => {
+    const optMap = {
+      A: row[aIdx] || "",
+      B: row[bIdx] || "",
+      C: row[cIdx] || "",
+      D: row[dIdx] || ""
+    };
+    return buildQuestion({
+      id: row[idIdx] || null,
+      question_text: row[qIdx] || "",
+      optMap,
+      correct_option: row[correctIdx]?.trim().toUpperCase() || "A",
+      explanation: row[expIdx] || "",
+      topic: row[chapIdx] || "",
+      chapter: row[chapIdx] || "",
+      tag: row[tagIdx] || "",
+      subject: row[subIdx] || "Physics"
+    });
+  });
+}
+
 export async function startElectrostaticsSession() {
   const btn = document.getElementById('es-start-btn');
   if (btn) { btn.disabled = true; btn.textContent = _ta('Loading…', 'ஏற்றுகிறது…'); }
@@ -302,22 +381,40 @@ export async function startElectrostaticsSession() {
       sessionStart = savedSession.start || Date.now();
       quizId = savedSession.quizId || null;
     } else {
-      // Check for daily locked quiz first
-      let dailyQuiz = null;
-      try {
-        const todayStr = _esLocalDate();
-        dailyQuiz = await _esFetchDailyQuiz(todayStr);
-      } catch(e) {
-        console.error('Failed to check daily quiz:', e);
+      const todayStr = _esLocalDate();
+      const sheetId = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_SHEET_ID);
+      
+      // Try to load daily quiz from Google Sheet first
+      if (sheetId) {
+        try {
+          questions = await _esFetchDailyQuizFromGoogleSheet(sheetId, todayStr);
+          if (questions && questions.length > 0) {
+            quizId = `sheet_${todayStr}`;
+          }
+        } catch(e) {
+          console.error('Failed to load from Google Sheet:', e);
+        }
       }
 
-      if (dailyQuiz && dailyQuiz.daily_quiz_questions && dailyQuiz.daily_quiz_questions.length > 0) {
-        quizId = dailyQuiz.id;
-        const qIds = dailyQuiz.daily_quiz_questions
-          .sort((a, b) => a.sequence_num - b.sequence_num)
-          .map(q => q.question_id);
-        questions = await _esFetchQuestionsByIds(qIds);
+      // Fallback to Supabase Daily Quiz
+      if (!quizId) {
+        let dailyQuiz = null;
+        try {
+          dailyQuiz = await _esFetchDailyQuiz(todayStr);
+        } catch(e) {
+          console.error('Failed to check daily quiz:', e);
+        }
 
+        if (dailyQuiz && dailyQuiz.daily_quiz_questions && dailyQuiz.daily_quiz_questions.length > 0) {
+          quizId = dailyQuiz.id;
+          const qIds = dailyQuiz.daily_quiz_questions
+            .sort((a, b) => a.sequence_num - b.sequence_num)
+            .map(q => q.question_id);
+          questions = await _esFetchQuestionsByIds(qIds);
+        }
+      }
+
+      if (quizId && questions && questions.length > 0) {
         // Mark these questions as seen
         let esState = _esLoad();
         esState = _esCheckRollover(esState);

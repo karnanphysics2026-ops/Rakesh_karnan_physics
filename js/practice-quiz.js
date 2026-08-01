@@ -3,7 +3,7 @@ import { _ta } from './i18n.js';
 import { showScreen } from './navigation.js';
 import {
   subjClass, qFingerprint, getSubjectDailyTotal, getDailyDone, setDailyDone,
-  isDailyComplete, getTimeUntilMidnight,
+  isDailyComplete, getTimeUntilMidnight, renderMath,
 } from './utils.js';
 import { saveStorage } from './db.js';
 import { awardXP, recordChapterSession } from './xp.js';
@@ -64,11 +64,15 @@ export function renderPracticeQ() {
   const sc = document.getElementById('pq-subj-chip');
   sc.textContent = q.subject || state.selection.subject?.label || '';
   sc.className = 'subject-chip ' + subjClass(q.subject || state.selection.subject?.label);
-  document.getElementById('pq-question').textContent = q.question;
+  const qEl = document.getElementById('pq-question');
+  qEl.innerHTML = q.question;
+  renderMath(qEl);
+
   const pqTag = document.getElementById('pq-tag');
   if (pqTag) pqTag.textContent = q.tag || '';
   const answered = answers[idx];
-  document.getElementById('pq-options').innerHTML = q.options.map((o, i) => {
+  const optEl = document.getElementById('pq-options');
+  optEl.innerHTML = q.options.map((o, i) => {
     let cls = 'opt';
     if (answered !== undefined) {
       cls += ' locked';
@@ -77,8 +81,12 @@ export function renderPracticeQ() {
     }
     return `<div class="${cls}" onclick="answerPractice(${i})"><div class="opt-key">${LETTERS[i]}</div>${o}</div>`;
   }).join('');
+  renderMath(optEl);
+
   const expEl = document.getElementById('pq-explanation');
-  document.getElementById('pq-exp-text').textContent = q.explanation || '';
+  const expElText = document.getElementById('pq-exp-text');
+  expElText.innerHTML = q.explanation || '';
+  renderMath(expElText);
   if (answered !== undefined && state.appMode !== 'challenge') { expEl.classList.add('show'); expEl.classList.toggle('wrong-bg', answered !== q.correct); }
   else expEl.classList.remove('show');
   document.getElementById('pq-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';

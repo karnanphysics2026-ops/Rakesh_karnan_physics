@@ -12,6 +12,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
 <noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet"/></noscript>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css"/>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -520,6 +523,24 @@ const SUPA_URL = 'https://vtswgisxeylubvazcefe.supabase.co';
 const SUPA_KEY = 'sb_publishable_lTpVWMDF42ocz84PXirWww_iVcNyeZ-';
 let supa = null, _authUser = null;
 
+function renderMath(element) {
+  if (window.renderMathInElement) {
+    try {
+      window.renderMathInElement(element, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "$", right: "$", display: false},
+          {left: "\\(", right: "\\)", display: false},
+          {left: "\\[", right: "\\]", display: true}
+        ],
+        throwOnError: false
+      });
+    } catch(e) {
+      console.warn("Math rendering failed:", e);
+    }
+  }
+}
+
 function _initSupabase() {
   if (supa) return supa;
   if (!window.supabase) return null;
@@ -886,10 +907,13 @@ function renderMcq(idx) {
   const q = _mcqQs[idx], total = _mcqQs.length;
   el('quiz-sub').textContent  = `Question ${idx+1} of ${total} today`;
   el('quiz-prog').style.width = Math.round((idx+1)/total*100) + '%';
-  el('quiz-q').textContent    = q.question;
+  const qEl = el('quiz-q');
+  qEl.innerHTML = q.question;
+  renderMath(qEl);
 
   const answered = _mcqSt.answers[idx];
-  el('quiz-opts').innerHTML = (q.displayOptions||[]).map((opt,i) => {
+  const optEl = el('quiz-opts');
+  optEl.innerHTML = (q.displayOptions||[]).map((opt,i) => {
     let cls = 'opt';
     if (answered !== undefined) {
       cls += ' locked';
@@ -898,10 +922,13 @@ function renderMcq(idx) {
     }
     return `<div class="${cls}" onclick="mcqAnswer(${i})"><div class="opt-key">${LETTERS[i]}</div>${opt}</div>`;
   }).join('');
+  renderMath(optEl);
 
   const expEl = el('quiz-exp');
   if (answered !== undefined) {
-    el('quiz-exp-text').textContent = q.explanation || '';
+    const expTextEl = el('quiz-exp-text');
+    expTextEl.innerHTML = q.explanation || '';
+    renderMath(expTextEl);
     expEl.classList.add('show');
     expEl.classList.toggle('wrong-bg', answered !== q.displayCorrect);
   } else {
@@ -949,9 +976,17 @@ function renderFC(idx) {
   const q = _fcQs[idx], total = _fcQs.length;
   el('fc-sub').textContent  = `Card ${idx+1} of ${total}`;
   el('fc-prog').style.width = Math.round((idx+1)/total*100) + '%';
-  el('fc-q').textContent    = q.question;
-  el('fc-ans').textContent  = q.correctText;
-  el('fc-exp').textContent  = q.explanation || '';
+  const fcQEl = el('fc-q');
+  fcQEl.innerHTML = q.question;
+  renderMath(fcQEl);
+
+  const fcAnsEl = el('fc-ans');
+  fcAnsEl.innerHTML = q.correctText;
+  renderMath(fcAnsEl);
+
+  const fcExpEl = el('fc-exp');
+  fcExpEl.innerHTML = q.explanation || '';
+  renderMath(fcExpEl);
 
   // Reset flip
   _fcFlipped = false;
@@ -1011,8 +1046,13 @@ function renderTF(idx) {
   const q = _tfQs[idx], total = _tfQs.length;
   el('tf-sub').textContent  = `Question ${idx+1} of ${total}`;
   el('tf-prog').style.width = Math.round((idx+1)/total*100) + '%';
-  el('tf-q').textContent    = q.question;
-  el('tf-stated').textContent = q.tfStatement;
+  const tfQEl = el('tf-q');
+  tfQEl.innerHTML = q.question;
+  renderMath(tfQEl);
+
+  const tfStatedEl = el('tf-stated');
+  tfStatedEl.innerHTML = q.tfStatement;
+  renderMath(tfStatedEl);
 
   const answered = _tfSt.answers[idx];
   const fb = el('tf-feedback');
@@ -1027,9 +1067,11 @@ function renderTF(idx) {
     fb.className = 'tf-feedback show ' + (isCorrect ? 'correct' : 'wrong');
     el('tf-fb-label').textContent = isCorrect ? '✓ Correct!' : '✗ Wrong!';
     const correctLabel = q.tfIsTrue ? 'TRUE' : 'FALSE';
-    el('tf-fb-text').textContent =
+    const tfFbTextEl = el('tf-fb-text');
+    tfFbTextEl.innerHTML =
       `The answer is ${correctLabel}. The correct answer to the question is: "${q.tfCorrectText}". ` +
       (q.explanation ? q.explanation : '');
+    renderMath(tfFbTextEl);
     // highlight buttons
     el('btn-true').style.opacity  = q.tfIsTrue ? '1' : (userSaidTrue ? '0.5' : '0.35');
     el('btn-false').style.opacity = !q.tfIsTrue ? '1' : (!userSaidTrue ? '0.5' : '0.35');

@@ -2,6 +2,7 @@ import { db, state } from './state.js';
 import { buildQuestion } from './db.js';
 import { showScreen } from './navigation.js';
 import { renderPracticeQ } from './practice-quiz.js';
+import { renderMath } from './utils.js';
 
 export async function renderDashboard() {
   const { total, correct, wrong, subjects, chapters, time } = state.progress;
@@ -164,6 +165,7 @@ export async function renderMistakes() {
       <div style="font-size:.78rem;color:var(--muted)">Correct: <span style="color:var(--success);font-weight:600">${m.correct_text}</span></div>
       ${m.explanation ? `<div style="font-size:.78rem;color:var(--muted);font-style:italic;margin-top:.3rem">💡 ${m.explanation}</div>` : ''}
     </div>`).join('');
+  renderMath(el);
 }
 
 export async function clearMistakes() {

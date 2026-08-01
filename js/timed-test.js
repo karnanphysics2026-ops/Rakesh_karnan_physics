@@ -1,6 +1,6 @@
 import { db, state, LETTERS } from './state.js';
 import { showScreen, selectionLabel, confirmSubmit } from './navigation.js';
-import { subjClass, shuffle, getWeekKey } from './utils.js';
+import { subjClass, shuffle, getWeekKey, renderMath } from './utils.js';
 import { fetchAllSubjectQuestions, saveStorage } from './db.js';
 import { awardXP } from './xp.js';
 import { checkAndShowAchievements } from './achievements.js';
@@ -93,10 +93,15 @@ export function renderTimedQ() {
   const sc = document.getElementById('tq-subj-chip');
   sc.textContent = q.subject || state.selection.subject?.label || '';
   sc.className = 'subject-chip ' + subjClass(q.subject || state.selection.subject?.label);
-  document.getElementById('tq-question').textContent = q.question;
-  document.getElementById('tq-options').innerHTML = q.options.map((o, i) =>
+  const qEl = document.getElementById('tq-question');
+  qEl.innerHTML = q.question;
+  renderMath(qEl);
+
+  const optEl = document.getElementById('tq-options');
+  optEl.innerHTML = q.options.map((o, i) =>
     `<div class="opt${answers[idx] === i ? ' selected' : ''}" onclick="answerTimed(${i})"><div class="opt-key">${LETTERS[i]}</div>${o}</div>`
   ).join('');
+  renderMath(optEl);
   document.getElementById('tq-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
   document.getElementById('tq-next').textContent = idx === questions.length - 1 ? 'Finish →' : 'Next →';
   const markBtn = document.getElementById('tq-mark');

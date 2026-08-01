@@ -6,7 +6,7 @@ import { showScreen } from './navigation.js';
 import { saveStorage } from './db.js';
 import { awardXP } from './xp.js';
 import { incrementDailyTarget } from './streaks.js';
-import { getTimeUntilMidnight } from './utils.js';
+import { getTimeUntilMidnight, renderMath } from './utils.js';
 
 // ── ELECTRIC CHARGES AND FIELDS — DAILY PRACTICE MODE ────────────────────────
 // Class 12 Physics · 200-question local pool · 20 questions/day
@@ -134,7 +134,9 @@ function _ecfShowQuestion(idx) {
   _ecfEl('ecf-prog-fill').style.width = Math.round((idx+1)/total*100) + '%';
 
   // Question
-  _ecfEl('ecf-question').textContent = q.question;
+  const qEl = _ecfEl('ecf-question');
+  qEl.innerHTML = q.question;
+  renderMath(qEl);
 
   // Tag
   const tagEl = _ecfEl('ecf-tag');
@@ -142,18 +144,22 @@ function _ecfShowQuestion(idx) {
 
   // Options
   const answered = _ecfState.answers[idx];
-  _ecfEl('ecf-options').innerHTML = q.displayOptions.map((opt, i) =>
+  const optEl = _ecfEl('ecf-options');
+  optEl.innerHTML = q.displayOptions.map((opt, i) =>
     `<div class="opt${answered !== undefined ? ' locked' + (i === q.displayCorrect ? ' correct' : answered === i ? ' wrong' : '') : ''}"
        onclick="ecfAnswer(${i})">
        <div class="opt-key">${LETTERS[i]}</div>${opt}
      </div>`
   ).join('');
+  renderMath(optEl);
 
   // Explanation (shown after answering)
   const expEl = _ecfEl('ecf-explanation');
   if (answered !== undefined) {
     const expText = lang && q.explanation_ta ? q.explanation_ta : (q.explanation || '');
-    _ecfEl('ecf-exp-text').textContent = expText;
+    const expElText = _ecfEl('ecf-exp-text');
+    expElText.innerHTML = expText;
+    renderMath(expElText);
     expEl.classList.add('show');
     expEl.classList.toggle('wrong-bg', answered !== q.displayCorrect);
   } else {
