@@ -41,7 +41,11 @@ export async function initApp() {
   });
 
   const urlParams = new URLSearchParams(window.location.search);
-  const isAdminRoute = urlParams.get('mode') === 'admin' || window.location.hash === '#admin' || window.location.hash === '#/admin';
+  const isAdminRoute = urlParams.get('mode') === 'admin' || 
+                       window.location.hash === '#admin' || 
+                       window.location.hash === '#/admin' || 
+                       window.location.pathname.endsWith('/admin') ||
+                       window.location.pathname.endsWith('/admin/');
 
   if (isAdminRoute) {
     if (state.authUser) {
