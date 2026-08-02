@@ -1,7 +1,7 @@
 // ── CONFIG (constants) ──
 // Paste your Supabase project URL and anon key here (Dashboard → Project Settings → API)
-export const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || 'https://aiqvkehvbzyqqqieyfgn.supabase.co';
-export const SUPABASE_ANON_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || 'sb_publishable_8tpgjgo-pOOD7DDBu_s35Q_CXecDE9o';
+export const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || 'https://ycehvlekjxygqfyjammk.supabase.co';
+export const SUPABASE_ANON_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || 'sb_publishable_XwPJcR9O6go0ZlA6bWo6XQ_ixUz4F9c';
 export const PREMIUM_DAILY_LIMIT = 9999;
 export const ADMIN_EMAIL = 'karnanphysics2026@gmail.com';
 export const LETTERS = ['1','2','3','4']; // display labels for options (never A/B/C/D to students)
