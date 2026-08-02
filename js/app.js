@@ -1,7 +1,8 @@
 import { state, ADMIN_EMAIL } from './state.js';
 import { _ta } from './i18n.js';
 import { showScreen } from './navigation.js';
-import { loadAdminConfig, loadSupabaseHomeStats } from './admin.js';
+import { loadAdminConfig, loadSupabaseHomeStats, showAdminPanel } from './admin.js';
+import { showAuthScreen } from './auth.js';
 import { loadGamificationState, renderLevelWidget } from './xp.js';
 import { loadDailyTarget, loadStreak } from './streaks.js';
 import { loadUserAchievements } from './achievements.js';
@@ -40,10 +41,33 @@ export async function initApp() {
   });
 
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('mode') === 'electrostatics' || window.location.hash === '#electrostatics') {
+  const isAdminRoute = urlParams.get('mode') === 'admin' || window.location.hash === '#admin' || window.location.hash === '#/admin';
+
+  if (isAdminRoute) {
+    if (state.authUser) {
+      if (state.authUser.email === ADMIN_EMAIL) {
+        showAdminPanel();
+      } else {
+        alert('Access Denied: You are not authorized as an administrator.');
+        showScreen('home');
+      }
+    } else {
+      state.adminRedirect = true;
+      showAuthScreen('login');
+    }
+  } else if (urlParams.get('mode') === 'electrostatics' || window.location.hash === '#electrostatics') {
     openElectrostaticsMode();
   } else {
-    showScreen('home');
+    if (state.authUser && state.adminRedirect) {
+      state.adminRedirect = false;
+      if (state.authUser.email === ADMIN_EMAIL) {
+        showAdminPanel();
+      } else {
+        showScreen('home');
+      }
+    } else {
+      showScreen('home');
+    }
   }
   setTimeout(showDailyTipPopup, 800);
 }
