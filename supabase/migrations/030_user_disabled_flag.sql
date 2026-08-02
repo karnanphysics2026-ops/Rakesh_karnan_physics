@@ -3,6 +3,7 @@ ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEF
 
 -- Allow the admin user (service role / authenticated admin) to read all profiles
 -- Admin reads via RPC to bypass row-level security
+DROP FUNCTION IF EXISTS get_all_user_profiles();
 CREATE OR REPLACE FUNCTION get_all_user_profiles()
 RETURNS TABLE (
   id uuid,
