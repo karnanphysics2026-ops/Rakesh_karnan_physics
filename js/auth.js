@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initApp();
   } else {
     showGuestLanding();
+    await initApp();
   }
 
   // React to auth state changes across tabs / email confirmation
