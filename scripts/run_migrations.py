@@ -1,82 +1,105 @@
-"""
-Run Supabase schema migrations via the Management API.
-
-Requires:
-  SUPABASE_URL=https://your-ref.supabase.co
-  SUPABASE_SERVICE_KEY=eyJ...  (service_role JWT)
-  SUPABASE_ACCESS_TOKEN=sbp_...  (optional — personal access token for DDL)
-
-If SUPABASE_ACCESS_TOKEN is not set, falls back to printing instructions.
-"""
-
-from __future__ import annotations
-
 import os
 import sys
+import subprocess
 from pathlib import Path
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-import urllib.request
-import urllib.error
-import json
-
-ROOT = Path(__file__).resolve().parents[1]
-MIGRATIONS = ROOT / "supabase" / "migrations"
-
-def run_sql_via_management_api(ref: str, token: str, sql: str) -> bool:
-    url = f"https://api.supabase.com/v1/projects/{ref}/database/query"
-    payload = json.dumps({"query": sql}).encode()
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+def install_and_import(package, import_name=None):
+    if import_name is None:
+        import_name = package
     try:
-        with urllib.request.urlopen(req) as resp:
-            print(f"  OK ({resp.status})")
-            return True
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        print(f"  Error {e.code}: {body[:200]}")
-        return False
+        __import__(import_name)
+    except ImportError:
+        print(f"Installing {package} database package...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
+# Attempt to install psycopg2-binary
+try:
+    install_and_import("psycopg2-binary", "psycopg2")
+    import psycopg2 as pg_driver
+    use_psycopg = True
+except Exception:
+    # Fallback to pure-python pg8000
+    install_and_import("pg8000")
+    import pg8000 as pg_driver
+    use_psycopg = False
 
-def main() -> int:
-    supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-    access_token = os.environ.get("SUPABASE_ACCESS_TOKEN", "").strip()
+def main():
+    print("=== Supabase Database Migration Runner ===")
+    
+    # Get database connection URI
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        print("\nPlease enter your Supabase Connection URI (from Project Settings -> Database -> Connection string -> URI).")
+        print("Format: postgres://postgres.[PROJECT_ID]:[PASSWORD]@db.[PROJECT_ID].supabase.co:5432/postgres")
+        db_url = input("\nConnection URI: ").strip()
 
-    if not supabase_url:
-        print("Error: SUPABASE_URL not set", file=sys.stderr)
+    if not db_url:
+        print("Error: Connection URI is required.")
         return 1
 
-    ref = supabase_url.replace("https://", "").split(".")[0]
+    # Connect to PostgreSQL
+    print("\nConnecting to Supabase...")
+    try:
+        if use_psycopg:
+            conn = pg_driver.connect(db_url)
+        else:
+            # Parse connection URI for pg8000
+            parts = db_url.split("://")[1].split("@")
+            auth = parts[0].split(":")
+            user = auth[0]
+            password = auth[1] if len(auth) > 1 else ""
+            host_port_db = parts[1].split("/")
+            host_port = host_port_db[0].split(":")
+            host = host_port[0]
+            port = int(host_port[1]) if len(host_port) > 1 else 5432
+            database = host_port_db[1].split("?")[0]
+            conn = pg_driver.connect(
+                user=user,
+                password=password,
+                host=host,
+                port=port,
+                database=database,
+                ssl_context=True
+            )
+        cursor = conn.cursor()
+        print("Connected successfully!")
+    except Exception as e:
+        print(f"Connection failed: {e}")
+        return 1
 
-    if not access_token:
-        print(
-            "\nSUPABASE_ACCESS_TOKEN not set — skipping DDL migrations.\n"
-            "If tables do not exist yet, please run these SQL files manually\n"
-            "in your Supabase SQL Editor:\n"
-            f"  1. supabase/migrations/001_initial_schema.sql\n"
-            f"  2. supabase/migrations/002_rls_policies.sql\n"
-        )
-        return 0
+    # Find SQL migration files
+    migrations_dir = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
+    migration_files = sorted(migrations_dir.glob("*.sql"))
 
-    for path in sorted(MIGRATIONS.glob("*.sql")):
-        print(f"Running {path.name}…")
-        if not run_sql_via_management_api(ref, access_token, path.read_text(encoding="utf-8")):
-            return 1
+    if not migration_files:
+        print(f"Error: No SQL files found in {migrations_dir}")
+        conn.close()
+        return 1
 
+    print(f"Found {len(migration_files)} migration files to apply.")
+
+    # Apply migrations
+    for sql_file in migration_files:
+        print(f"Applying {sql_file.name}...", end="", flush=True)
+        try:
+            sql_content = sql_file.read_text(encoding="utf-8")
+            
+            # Execute entire file contents (handles multi-statement transactions)
+            cursor.execute(sql_content)
+            conn.commit()
+            print(" [OK]")
+        except Exception as e:
+            conn.rollback()
+            print(" [FAILED]")
+            print(f"Error applying {sql_file.name}: {e}")
+            confirm = input("Do you want to skip this migration and continue? (y/n): ").strip().lower()
+            if confirm != 'y':
+                conn.close()
+                return 1
+
+    print("\nAll database tables and schemas applied successfully!")
+    conn.close()
     return 0
 
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
