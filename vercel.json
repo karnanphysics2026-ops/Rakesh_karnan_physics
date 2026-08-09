@@ -1,10 +1,15 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "crons": [
     {
       "path": "/api/sync",
       "schedule": "0 0 * * *"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/electrostatics",
+      "destination": "/class12/electrostatics/",
+      "permanent": true
     }
   ],
   "rewrites": [
